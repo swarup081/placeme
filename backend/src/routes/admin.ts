@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { sendEmail } from '../utils/email.ts';
 
 const router = Router();
 
@@ -70,16 +71,43 @@ router.post('/invite-tnp', async (req: Request, res: Response): Promise<void> =>
         // For now, return the link instead of emailing it
         const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/setup-account?token=${token}`;
 
+        const emailSubject = "Invitation to Join as T&P Coordinator";
+        const emailHtml = `
+            <h2>You've been invited!</h2>
+            <p>You have been invited to join the platform as a Training & Placement Coordinator.</p>
+            <p>Click the link below to set up your account. This link will expire in 7 days.</p>
+            <a href="${inviteLink}">Set up my account</a>
+        `;
+
+        const { error: emailError } = await sendEmail(email, emailSubject, emailHtml);
+
+        if (emailError) {
+            console.error('Failed to send Resend email:', emailError);
+            // You can choose to return a 500 here, but returning a 201 with a warning 
+            // is often better since the DB record was successfully created.
+            res.status(201).json({
+                message: 'Invitation created, but failed to send email.',
+                inviteLink, 
+                warning: emailError.message,
+                invitation: {
+                    id: invitation.id,
+                    email: invitation.email,
+                },
+            });
+            return;
+        }
+
         res.status(201).json({
-            message: 'Invitation created successfully',
-            inviteLink,
+            message: 'Invitation created and email sent successfully',
+            // You can remove inviteLink from the response later for better security in prod
+            inviteLink, 
             invitation: {
                 id: invitation.id,
                 email: invitation.email,
                 expiresAt: invitation.expiresAt,
             },
         });
-    } catch (err) {
+    }catch (err) {
         console.error('Invite error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
