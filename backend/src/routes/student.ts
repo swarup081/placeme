@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { eq, and, gt } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { sendEmail } from '../utils/email.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET!;
@@ -84,10 +85,7 @@ router.post('/check-email', async (req: Request, res: Response): Promise<void> =
 /**
  * POST /student/send-otp
  * Body: { email }
- * Re-checks domain (security), generates 6-digit OTP, saves to emailOtps.
- * 
- * TODO: Wire up email provider (Nodemailer/Resend) to actually send the OTP.
- * For now, the OTP is returned in the API response for testing.
+ * Re-checks domain (security), generates 6-digit OTP, saves to emailOtps, and emails it.
  */
 router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
     try {
@@ -124,7 +122,7 @@ router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
         const expiresAt = new Date();
         expiresAt.setMinutes(expiresAt.getMinutes() + 10);
 
-        // Save OTP
+        // Save OTP to database
         await db
             .insert(schema.emailOtps)
             .values({
@@ -133,11 +131,34 @@ router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
                 expiresAt,
             });
 
-        // TODO: Send OTP via email provider (Nodemailer/Resend) — deferred to later phase
-        // For now, return OTP in response for testing
+        // Construct the email
+        const subject = "Your MockMate Verification Code";
+        const htmlMessage = `
+            <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
+                <h2 style="color: #333;">Welcome to MockMate!</h2>
+                <p style="color: #555; font-size: 16px;">Use the following One-Time Password (OTP) to verify your student account:</p>
+                <div style="background-color: #f4f4f4; padding: 16px; text-align: center; border-radius: 6px; margin: 24px 0;">
+                    <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #000;">${otp}</span>
+                </div>
+                <p style="color: #777; font-size: 14px;">This code will expire in 10 minutes. If you didn't request this, you can safely ignore this email.</p>
+            </div>
+        `;
+
+        // Send the OTP via Resend
+        const { error: emailError } = await sendEmail(email.toLowerCase(), subject, htmlMessage);
+
+        if (emailError) {
+            console.error('Failed to send OTP email via Resend:', emailError);
+            res.status(500).json({ 
+                error: 'Failed to send OTP email. Please try again later.',
+                details: emailError.message 
+            });
+            return;
+        }
+
+        // Success response (DO NOT return the OTP in the JSON anymore)
         res.json({
-            message: 'OTP sent successfully',
-            otp, // Remove this line once email provider is set up
+            message: 'OTP sent successfully to your email',
             expiresInMinutes: 10,
         });
     } catch (err) {

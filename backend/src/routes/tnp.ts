@@ -3,6 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 
+
 const router = Router();
 
 // All T&P routes require authentication + TNP role
