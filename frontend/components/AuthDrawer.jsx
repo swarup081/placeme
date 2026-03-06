@@ -17,6 +17,8 @@ export default function AuthDrawer({ isOpen, onClose }) {
   const [selectedRole, setSelectedRole] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
+  const [error, setError] = useState(null);
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   // File Upload States
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -25,6 +27,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
+    inviteToken: "",
     name: "",
     referralCode: "",
     otp: "",
@@ -48,6 +51,62 @@ export default function AuthDrawer({ isOpen, onClose }) {
   };
 
   // The 5-10 Second Fake Loading / Verification Sequence
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+    setStep("loading");
+    setLoadingText("Authenticating...");
+
+    try {
+      const res = await fetch(`${apiUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Login failed");
+      }
+
+      // Save token
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      setLoadingText("Provisioning dashboard...");
+      await new Promise(r => setTimeout(r, 800)); // small delay for UI effect
+
+      setIsLoading(false);
+      onClose();
+
+      // Redirect based on role
+      const role = data.user.role?.toLowerCase();
+      if (role === "student") router.push("/dashboard/student");
+      else if (role === "tnp") router.push("/dashboard/tnp");
+      else if (role === "admin") router.push("/dashboard/admin");
+      else router.push(`/dashboard/${role}`);
+
+      // Reset state
+      setTimeout(() => {
+        setStep(1);
+        setSelectedRole(null);
+        setUploadedFile(null);
+        setFormData({ ...formData, password: "" });
+      }, 500);
+
+    } catch (err) {
+      setIsLoading(false);
+      setStep(1);
+      setError(err.message);
+    }
+  };
+
   const simulateVerification = async (targetDashboard) => {
     setIsLoading(true);
     setStep("loading");
@@ -82,24 +141,101 @@ export default function AuthDrawer({ isOpen, onClose }) {
     router.push(targetDashboard);
   };
 
-  const handleNextStep = (e) => {
+  const handleNextStep = async (e) => {
     e?.preventDefault();
+    setError(null);
     
     if (authMode === 'login') {
-      simulateVerification(`/dashboard/${selectedRole || 'student'}`);
       return;
     }
 
     if (selectedRole === 'student') {
-      if (step === 2) setStep(3); 
-      else if (step === 3) setStep(4); 
-      else if (step === 4) simulateVerification('/dashboard/student');
+      if (step === 2) {
+        setIsLoading(true);
+        setStep("loading");
+        setLoadingText("Verifying college domain...");
+
+        try {
+          const res = await fetch(`${apiUrl}/student/send-otp`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: formData.email }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to send OTP");
+
+          setIsLoading(false);
+          setStep(3);
+        } catch (err) {
+          setIsLoading(false);
+          setStep(2);
+          setError(err.message);
+        }
+      }
+      else if (step === 3) {
+        setIsLoading(true);
+        setStep("loading");
+        setLoadingText("Validating OTP...");
+
+        try {
+          const res = await fetch(`${apiUrl}/student/verify-otp`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: formData.email,
+              otp: formData.otp,
+              password: formData.password
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to verify OTP");
+
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("user", JSON.stringify(data.user));
+
+          setIsLoading(false);
+          setStep(4);
+        } catch (err) {
+          setIsLoading(false);
+          setStep(3);
+          setError(err.message);
+        }
+      }
+      else if (step === 4) {
+        simulateVerification('/dashboard/student');
+      }
     } else if (selectedRole === 'company') {
-      if (step === 2) setStep(3); 
+      if (step === 2) { setStep(3); setError(null); }
       else if (step === 3) simulateVerification('/dashboard/company');
     } else if (selectedRole === 'tnp') {
-      if (step === 2) setStep(3); 
-      else if (step === 3) simulateVerification('/dashboard/tnp');
+      if (step === 2) {
+        setIsLoading(true);
+        setStep("loading");
+        setLoadingText("Validating Invite Token...");
+
+        try {
+          const res = await fetch(`${apiUrl}/invite/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token: formData.inviteToken,
+              name: formData.name,
+              password: formData.password
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to register T&P Cell");
+
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("user", JSON.stringify(data.user));
+
+          simulateVerification('/dashboard/tnp');
+        } catch (err) {
+          setIsLoading(false);
+          setStep(2);
+          setError(err.message);
+        }
+      }
     }
   };
 
@@ -118,7 +254,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
           key={role.id}
           onClick={() => {
             setSelectedRole(role.id);
-            setStep(2);
+            setStep(2); setError(null);
           }}
           className="w-full flex items-center p-4 border border-gray-200 bg-white hover:border-[#2C6E8F]/60 hover:shadow-md transition-all group text-left"
         >
@@ -138,34 +274,46 @@ export default function AuthDrawer({ isOpen, onClose }) {
   const renderBasicInfo = () => (
     <form onSubmit={handleNextStep} className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-6">
-        <button type="button" onClick={() => setStep(1)} className="text-xs text-gray-400 hover:text-black mb-2 flex items-center gap-1">
+        <button type="button" onClick={() => { setStep(1); setError(null); }} className="text-xs text-gray-400 hover:text-black mb-2 flex items-center gap-1">
           ← Back to roles
         </button>
         <h3 className="text-xl font-medium text-[#1A1A1A]">
           Create <span className="font-serif italic text-[#2C6E8F] capitalize">{selectedRole}</span> Account
         </h3>
       </div>
+      {error && (
+        <div className="p-3 mb-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-sm">
+          {error}
+        </div>
+      )}
 
       <div className="space-y-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1.5">Full Name / Contact Person</label>
-          <input required type="text" name="name" onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="Enter name" />
+          <input required type="text" name="name" value={formData.name} onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="Enter name" />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">
-            {selectedRole === 'student' ? 'College Email (Institute ID)' : 'Official Work Email'}
-          </label>
-          <input required type="email" name="email" onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="name@domain.edu" />
-        </div>
+        {selectedRole === 'tnp' ? (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5">Invite Token</label>
+            <input required type="text" name="inviteToken" value={formData.inviteToken} onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="Enter invite code" />
+          </div>
+        ) : (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5">
+              {selectedRole === 'student' ? 'College Email (Institute ID)' : 'Official Work Email'}
+            </label>
+            <input required type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="name@domain.edu" />
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1.5">Password</label>
-          <input required type="password" name="password" onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="••••••••" />
+          <input required type="password" name="password" value={formData.password} onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="••••••••" />
         </div>
         
         {selectedRole === 'student' && (
            <div>
              <label className="block text-xs font-medium text-gray-600 mb-1.5">T&P Partner Code (Optional)</label>
-             <input type="text" name="referralCode" onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:border-[#2C6E8F] transition-all" placeholder="e.g. NITA_2026" />
+             <input type="text" name="referralCode" value={formData.referralCode} onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:border-[#2C6E8F] transition-all" placeholder="e.g. NITA_2026" />
              <p className="text-[10px] text-gray-400 mt-1">If your college is a partner, enter the code to bypass manual approval.</p>
            </div>
         )}
@@ -191,8 +339,13 @@ export default function AuthDrawer({ isOpen, onClose }) {
       {/* --- STUDENT VERIFICATION --- */}
       {selectedRole === 'student' && (
         <div>
+          {error && (
+            <div className="p-3 mb-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-sm">
+              {error}
+            </div>
+          )}
           <label className="block text-xs font-medium text-gray-600 mb-1.5">Enter 6-Digit OTP</label>
-          <input required type="text" maxLength={6} className="w-full border border-gray-300 p-3 text-center text-lg tracking-[0.5em] focus:outline-none focus:border-[#2C6E8F]" placeholder="••••••" />
+          <input required type="text" name="otp" value={formData.otp} onChange={handleInputChange} maxLength={6} className="w-full border border-gray-300 p-3 text-center text-lg tracking-[0.5em] focus:outline-none focus:border-[#2C6E8F]" placeholder="••••••" />
         </div>
       )}
 
@@ -356,13 +509,13 @@ export default function AuthDrawer({ isOpen, onClose }) {
                   {step === 1 && (
                     <div className="flex bg-gray-100 p-1 rounded-sm mb-8">
                       <button 
-                        onClick={() => setAuthMode('login')} 
+                        onClick={() => { setAuthMode('login'); setError(null); }}
                         className={`flex-1 py-2 text-sm font-medium transition-all ${authMode === 'login' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`}
                       >
                         Log In
                       </button>
                       <button 
-                        onClick={() => setAuthMode('register')} 
+                        onClick={() => { setAuthMode('register'); setError(null); }}
                         className={`flex-1 py-2 text-sm font-medium transition-all ${authMode === 'register' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`}
                       >
                         Register
@@ -371,26 +524,22 @@ export default function AuthDrawer({ isOpen, onClose }) {
                   )}
 
                   {authMode === 'login' && step === 1 ? (
-                    <form onSubmit={(e) => { e.preventDefault(); setStep(2); }} className="space-y-4 animate-in fade-in duration-500">
-                      <div>
-                         <label className="block text-xs font-medium text-gray-600 mb-1.5">Role</label>
-                         <select required onChange={(e) => setSelectedRole(e.target.value)} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] bg-white">
-                           <option value="">Select your role...</option>
-                           <option value="student">Student</option>
-                           <option value="company">Company / Recruiter</option>
-                           <option value="tnp">T&P Cell</option>
-                         </select>
-                      </div>
+                    <form onSubmit={handleLogin} className="space-y-4 animate-in fade-in duration-500">
+                      {error && (
+                        <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-sm">
+                          {error}
+                        </div>
+                      )}
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1.5">Email Address</label>
-                        <input required type="email" className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F]" placeholder="name@domain.com" />
+                        <input required type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F]" placeholder="name@domain.com" />
                       </div>
                       <div>
                         <div className="flex justify-between items-center mb-1.5">
                           <label className="block text-xs font-medium text-gray-600">Password</label>
                           <a href="#" className="text-[10px] text-[#2C6E8F] hover:underline">Forgot?</a>
                         </div>
-                        <input required type="password" className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F]" placeholder="••••••••" />
+                        <input required type="password" name="password" value={formData.password} onChange={handleInputChange} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F]" placeholder="••••••••" />
                       </div>
                       <button type="submit" className="w-full bg-[#1A1A1A] text-white p-3.5 text-sm font-medium hover:bg-black transition-colors mt-6">
                         Access Dashboard
