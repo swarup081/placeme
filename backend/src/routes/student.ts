@@ -426,13 +426,56 @@ router.get('/dashboard', authenticate, requireRole('STUDENT'), async (req: Reque
 
         const interviewCount = intRows.length;
 
+        const applicationsDetailed = await db
+            .select({
+                id: schema.applications.id,
+                state: schema.applications.state,
+                appliedAt: schema.applications.appliedAt,
+                jobTitle: schema.jobs.title,
+                jobLocation: schema.jobs.location,
+                companyName: schema.companies.name,
+            })
+            .from(schema.applications)
+            .innerJoin(schema.jobs, eq(schema.applications.jobId, schema.jobs.id))
+            .innerJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
+            .innerJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
+            .where(eq(schema.applications.studentId, studentId))
+            .orderBy(desc(schema.applications.appliedAt))
+            .limit(3);
+
+        const upcomingInterviews = await db
+            .select({
+                id: schema.interviews.id,
+                applicationId: schema.interviews.applicationId,
+                scheduledAt: schema.interviews.scheduledAt,
+                mode: schema.interviews.mode,
+                meetingLink: schema.interviews.meetingLink,
+                companyName: schema.companies.name,
+                jobTitle: schema.jobs.title,
+            })
+            .from(schema.interviews)
+            .innerJoin(schema.applications, eq(schema.interviews.applicationId, schema.applications.id))
+            .innerJoin(schema.jobs, eq(schema.applications.jobId, schema.jobs.id))
+            .innerJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
+            .innerJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
+            .where(
+                and(
+                    eq(schema.applications.studentId, studentId),
+                    gt(schema.interviews.scheduledAt, new Date())
+                )
+            )
+            .orderBy(schema.interviews.scheduledAt)
+            .limit(3);
+
         res.json({
             stats: {
                 atsScore: 82, // Mocked for now
                 applications: applicationCount,
                 interviews: interviewCount,
                 profileCompleteness,
-            }
+            },
+            recentApplications: applicationsDetailed,
+            upcomingInterviews,
         });
     } catch (err) {
         console.error('Dashboard error:', err);

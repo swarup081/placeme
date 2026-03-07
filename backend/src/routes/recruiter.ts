@@ -343,11 +343,35 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
             interviewsScheduled = interviewApps.length;
 
             if (interviewApps.length > 0) {
+                const interviewAppIds = interviewApps.map(a => a.id);
                 const ints = await db
-                    .select()
-                    .from(schema.interviews)
-                // In a real app we'd IN clause the application IDs
-                // Simplified for now
+                    .select({
+                        id: schema.interviews.id,
+                        applicationId: schema.interviews.applicationId,
+                        scheduledAt: schema.interviews.scheduledAt,
+                        mode: schema.interviews.mode,
+                        meetingLink: schema.interviews.meetingLink,
+                    })
+                    .from(schema.interviews);
+
+                // Filter and map to upcoming interviews
+                upcomingInterviews = ints
+                    .filter(i => interviewAppIds.includes(i.applicationId))
+                    .map(i => {
+                        const app = interviewApps.find(a => a.id === i.applicationId)!;
+                        const dateObj = new Date(i.scheduledAt);
+                        return {
+                            id: i.id,
+                            applicationId: app.id,
+                            name: app.studentName,
+                            role: app.jobTitle,
+                            interviewDate: dateObj.toLocaleDateString(),
+                            interviewTime: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            mode: i.mode,
+                            meetingLink: i.meetingLink,
+                        };
+                    })
+                    .sort((a, b) => new Date(a.interviewDate + ' ' + a.interviewTime).getTime() - new Date(b.interviewDate + ' ' + b.interviewTime).getTime());
             }
         }
 
@@ -358,7 +382,7 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
                 shortlisted,
                 interviewsScheduled
             },
-            upcomingInterviews // Mocked or simplified for now due to complex joins
+            upcomingInterviews
         });
     } catch (err) {
         console.error('Recruiter dashboard error:', err);

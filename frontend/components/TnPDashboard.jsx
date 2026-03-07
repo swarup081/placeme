@@ -72,14 +72,20 @@ export default function TnPDashboard() {
 
       if (res.ok) {
         setStats({
-          totalStudents: data.totalStudents || 0,
-          placedStudents: data.placedStudents || 0,
-          activeDrives: data.activeDrives || 0,
-          avgCtc: data.avgCtc || "N/A",
+          totalStudents: data.stats?.totalStudents || 0,
+          placedStudents: data.stats?.placedStudents || 0,
+          activeDrives: data.stats?.activeDrives || 0,
+          avgCtc: data.stats?.avgCtc || "N/A",
         });
         setPendingApprovals(data.pendingApprovals || []);
-        setStudents(data.students || []);
       }
+
+      const res2 = await apiFetch("/tnp/students");
+      const data2 = await res2.json();
+      if (res2.ok) {
+        setStudents(data2.students || []);
+      }
+
     } catch { /* silently fail */ }
     setDashboardLoading(false);
   };
