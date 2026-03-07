@@ -75,7 +75,8 @@ export default function AuthDrawer({ isOpen, onClose }) {
       setTimeout(() => {
         setIsLoading(false);
         handleClose();
-        const role = (data.user.role || "student").toLowerCase();
+        let role = (data.user.role || "student").toLowerCase();
+        if (role === "recruiter") role = "company";
         router.push(`/dashboard/${role}`);
       }, 800);
     } catch {
