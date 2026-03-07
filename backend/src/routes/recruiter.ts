@@ -393,33 +393,51 @@ router.get('/colleges', async (req: Request, res: Response): Promise<void> => {
 
 /**
  * POST /recruiter/jobs
- * Creates a new job listing.
+ * Creates a new job listing for ALL colleges with a registered T&P Profile.
  */
 router.post('/jobs', async (req: Request, res: Response): Promise<void> => {
     try {
         const recruiterId = req.user!.id;
-        const { title, description, location, minCgpa, type, ctc, collegeId, branches } = req.body;
+        const { title, description, location, minCgpa, type, ctc, branches } = req.body;
 
-        if (!title || !description || !collegeId) {
-            res.status(400).json({ error: 'Title, description, and collegeId are required' });
+        if (!title || !description) {
+            res.status(400).json({ error: 'Title and description are required' });
             return;
         }
 
-        const [job] = await db
+        // 1. Get all colleges that have a registered T&P
+        const registeredColleges = await db
+            .select({ id: schema.colleges.id })
+            .from(schema.colleges)
+            .innerJoin(schema.tnpProfiles, eq(schema.tnpProfiles.collegeId, schema.colleges.id));
+
+        // Deduplicate in case there are multiple TNPs per college
+        const uniqueCollegeIds = Array.from(new Set(registeredColleges.map(c => c.id)));
+
+        if (uniqueCollegeIds.length === 0) {
+            res.status(400).json({ error: 'No colleges are currently registered on the platform.' });
+            return;
+        }
+
+        // 2. Prepare bulk insert data
+        const jobsData = uniqueCollegeIds.map(collegeId => ({
+            recruiterId,
+            collegeId,
+            title,
+            description: `${description}\n\nType: ${type || 'Full-Time'}\nCTC: ${ctc || 'N/A'}`,
+            location,
+            branches: branches && branches.length > 0 ? branches : null,
+            minCgpa: minCgpa ? minCgpa.toString() : null,
+            state: 'SUBMITTED' as const // Awaiting T&P approval
+        }));
+
+        // 3. Bulk Insert
+        const insertedJobs = await db
             .insert(schema.jobs)
-            .values({
-                recruiterId,
-                collegeId,
-                title,
-                description: `${description}\n\nType: ${type}\nCTC: ${ctc}`, // Storing type/ctc in description for now since schema doesn't have them
-                location,
-                branches: branches && branches.length > 0 ? branches : null,
-                minCgpa: minCgpa ? minCgpa.toString() : null,
-                state: 'SUBMITTED' // Awaiting T&P approval
-            })
+            .values(jobsData)
             .returning();
 
-        res.status(201).json({ message: 'Job submitted for approval', job });
+        res.status(201).json({ message: 'Job submitted for approval', job: insertedJobs[0] });
     } catch (err) {
         console.error('Post job error:', err);
         res.status(500).json({ error: 'Internal server error' });

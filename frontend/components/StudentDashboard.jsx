@@ -130,6 +130,8 @@ export default function StudentDashboard() {
     setJobsLoading(false);
   };
 
+  const [applicationsData, setApplicationsData] = useState([]);
+
   const fetchApplications = async () => {
     try {
       const res = await apiFetch("/student/applications");
@@ -137,8 +139,37 @@ export default function StudentDashboard() {
         const data = await res.json();
         const appliedIds = (data.applications || []).map(a => a.jobId || a.id);
         setAppliedJobs(appliedIds);
+        setApplicationsData(data.applications || []);
       }
     } catch { /* silently fail */ }
+  };
+
+  // Helper to map DB state to UI progress stages
+  const getApplicationProgress = (state) => {
+    const stages = ["Applied", "Screening", "Interview", "Offer"];
+    let currentStage = 0;
+    let statusText = "Under Review";
+
+    switch (state) {
+      case "APPLIED":
+        currentStage = 0; statusText = "Application Submitted"; break;
+      case "SHORTLISTED":
+        currentStage = 1; statusText = "Shortlisted for next round"; break;
+      case "INTERVIEW_SCHEDULED":
+      case "INTERVIEWED":
+      case "HR_ROUND":
+        currentStage = 2; statusText = "Interview in progress"; break;
+      case "OFFERED":
+        currentStage = 3; statusText = "Offer Extended"; break;
+      case "ACCEPTED":
+        currentStage = 3; statusText = "Offer Accepted"; break;
+      case "REJECTED":
+        currentStage = 0; statusText = "Application Rejected"; break;
+      default:
+        currentStage = 0; statusText = state;
+    }
+
+    return { stages, currentStage, statusText };
   };
 
   // Mock Data
@@ -151,23 +182,7 @@ export default function StudentDashboard() {
 
 
 
-  const applicationsDetailed = [
-    {
-      id: 1, company: "Amazon", role: "Software Development Engineer Intern",
-      appliedDate: "Oct 24, 2026", location: "Bangalore",
-      stages: ["Applied", "Online Test", "Interview", "Offer"], currentStage: 2, status: "Interview Scheduled for Nov 2"
-    },
-    {
-      id: 2, company: "Goldman Sachs", role: "Summer Analyst",
-      appliedDate: "Oct 20, 2026", location: "Hyderabad",
-      stages: ["Applied", "Online Test", "Interview", "Offer"], currentStage: 1, status: "Shortlisted for Test"
-    },
-    {
-      id: 3, company: "TCS", role: "Digital Profile",
-      appliedDate: "Oct 15, 2026", location: "Pan India",
-      stages: ["Applied", "Online Test", "Interview", "Offer"], currentStage: 0, status: "Under Review"
-    },
-  ];
+
 
 
 
@@ -265,22 +280,26 @@ export default function StudentDashboard() {
             <button onClick={() => handleTabChange('applications')} className="text-[11px] sm:text-xs text-[#6B99A8] hover:underline font-medium">View All</button>
           </div>
           <div className="space-y-3">
-            {applicationsDetailed.slice(0, 3).map((app) => (
-              <div key={app.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border border-gray-100 hover:border-gray-200 transition-colors bg-gray-50/30 gap-3 sm:gap-0">
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 bg-white border border-gray-200 rounded flex items-center justify-center font-bold text-gray-700">
-                    {app.company[0]}
+            {applicationsData.slice(0, 3).map((app) => {
+              const { stages, currentStage } = getApplicationProgress(app.state);
+              const appliedDate = new Date(app.appliedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              return (
+                <div key={app.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border border-gray-100 hover:border-gray-200 transition-colors bg-gray-50/30 gap-3 sm:gap-0">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 bg-white border border-gray-200 rounded flex items-center justify-center font-bold text-gray-700 uppercase">
+                      {(app.companyName || '?')[0]}
+                    </div>
+                    <div className="overflow-hidden">
+                      <h4 className="text-[13px] sm:text-sm font-semibold text-[#1A1A1A] truncate">{app.jobTitle}</h4>
+                      <p className="text-[10px] sm:text-[11px] text-gray-500 truncate">{app.companyName} • Applied {appliedDate}</p>
+                    </div>
                   </div>
-                  <div className="overflow-hidden">
-                    <h4 className="text-[13px] sm:text-sm font-semibold text-[#1A1A1A] truncate">{app.role}</h4>
-                    <p className="text-[10px] sm:text-[11px] text-gray-500 truncate">{app.company} • Applied {app.appliedDate}</p>
-                  </div>
+                  <span className="self-start sm:self-auto text-[9px] sm:text-[10px] font-semibold px-2 py-1 sm:px-2.5 rounded border uppercase tracking-wider bg-white text-gray-700 border-gray-200 shrink-0">
+                    {stages[currentStage]}
+                  </span>
                 </div>
-                <span className="self-start sm:self-auto text-[9px] sm:text-[10px] font-semibold px-2 py-1 sm:px-2.5 rounded border uppercase tracking-wider bg-white text-gray-700 border-gray-200 shrink-0">
-                  {app.stages[app.currentStage]}
-                </span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
@@ -595,63 +614,65 @@ export default function StudentDashboard() {
       </div>
 
       <div className="space-y-4">
-        {applicationsDetailed.map((app) => (
-          <div key={app.id} className="bg-white border border-gray-200 p-5 sm:p-8 hover:shadow-[0_4px_20px_rgba(0,0,0,0.04)] transition-all flex flex-col lg:flex-row lg:items-center gap-6 lg:gap-12">
-            <div className="w-full lg:w-1/3">
-              <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-gray-50 border border-gray-200 flex items-center justify-center font-bold text-gray-700 text-base sm:text-lg rounded-sm">
-                  {app.company[0]}
-                </div>
-                <div className="overflow-hidden">
-                  <h3 className="text-sm sm:text-base font-semibold text-[#1A1A1A] truncate">{app.company}</h3>
-                  <p className="text-[11px] sm:text-[12px] text-gray-500 flex items-center gap-1 mt-0.5 truncate"><MapPin size={10} /> {app.location}</p>
-                </div>
-              </div>
-              <h4 className="text-[13px] sm:text-[14px] font-medium text-[#5B8D9E] leading-snug">{app.role}</h4>
-              <p className="text-[10px] sm:text-[11px] text-gray-400 mt-1 flex items-center gap-1"><Calendar size={10} /> Applied on {app.appliedDate}</p>
-            </div>
-
-            <div className="w-full lg:w-2/3 flex flex-col justify-center mt-2 lg:mt-0">
-              {/* Progress Tracker */}
-              <div className="flex items-center justify-between relative mb-2 w-full">
-                <div className="absolute left-[10%] right-[10%] top-1/2 h-[2px] bg-gray-100 -z-10 -translate-y-1/2"></div>
-                <div
-                  className="absolute left-[10%] top-1/2 h-[2px] bg-[#6B99A8] -z-10 -translate-y-1/2 transition-all duration-500"
-                  style={{ width: `${(app.currentStage / (app.stages.length - 1)) * 80}%` }}
-                ></div>
-
-                {app.stages.map((stage, index) => {
-                  const isActive = index <= app.currentStage;
-                  const isCurrent = index === app.currentStage;
-
-                  return (
-                    <div key={stage} className="flex flex-col items-center gap-2 sm:gap-3 bg-white px-1 sm:px-2">
-                      <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[9px] sm:text-[10px] border-2 transition-colors shrink-0 ${isActive ? 'bg-[#6B99A8] border-[#6B99A8] text-white' : 'bg-white border-gray-200 text-gray-300'
-                        } ${isCurrent ? 'ring-4 ring-[#6B99A8]/20' : ''}`}>
-                        {isActive ? <CheckCircle2 size={10} className="sm:w-[12px] sm:h-[12px]" strokeWidth={3} /> : index + 1}
-                      </div>
-                      <span className={`text-[8px] sm:text-[10px] font-medium uppercase tracking-wider text-center max-w-[50px] sm:max-w-none ${isActive ? 'text-[#1A1A1A]' : 'text-gray-400'}`}>
-                        {stage}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="mt-5 sm:mt-6 bg-[#f4f8f9] border border-[#6B99A8]/20 px-3 sm:px-4 py-2.5 sm:py-3 rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
-                <span className="text-[11px] sm:text-[12px] font-medium text-[#5B8D9E]">Current Status: {app.status}</span>
-                {app.currentStage > 0 && app.currentStage < 3 && (
-                  <button
-                    onClick={() => setSelectedApp(app)}
-                    className="text-[10px] sm:text-[11px] bg-white border border-[#6B99A8]/30 px-3 py-1.5 sm:py-1 text-[#5B8D9E] hover:bg-[#6B99A8] hover:text-white transition-colors rounded-sm text-center"
-                  >
-                    View Details
-                  </button>
-                )}
-              </div>
-            </div>
+        {applicationsData.length === 0 ? (
+          <div className="text-center p-12 bg-white border border-gray-200">
+            <p className="text-gray-500 text-sm">You haven't applied to any jobs yet.</p>
           </div>
-        ))}
+        ) : applicationsData.map((app) => {
+          const { stages, currentStage, statusText } = getApplicationProgress(app.state);
+          // Format date assuming app.appliedAt is an ISO string
+          const appliedDate = new Date(app.appliedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+          return (
+            <div key={app.id} className="bg-white border border-gray-200 p-5 sm:p-8 hover:shadow-[0_4px_20px_rgba(0,0,0,0.04)] transition-all flex flex-col lg:flex-row lg:items-center gap-6 lg:gap-12">
+              <div className="w-full lg:w-1/3">
+                <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-gray-50 border border-gray-200 flex items-center justify-center font-bold text-gray-700 text-base sm:text-lg rounded-sm uppercase">
+                    {(app.companyName || '?')[0]}
+                  </div>
+                  <div className="overflow-hidden">
+                    <h3 className="text-sm sm:text-base font-semibold text-[#1A1A1A] truncate">{app.companyName}</h3>
+                    <p className="text-[11px] sm:text-[12px] text-gray-500 flex items-center gap-1 mt-0.5 truncate"><MapPin size={10} /> {app.jobLocation}</p>
+                  </div>
+                </div>
+                <h4 className="text-[13px] sm:text-[14px] font-medium text-[#5B8D9E] leading-snug">{app.jobTitle}</h4>
+                <p className="text-[10px] sm:text-[11px] text-gray-400 mt-1 flex items-center gap-1"><Calendar size={10} /> Applied on {appliedDate}</p>
+              </div>
+
+              <div className="w-full lg:w-2/3 flex flex-col justify-center mt-2 lg:mt-0">
+                {/* Progress Tracker */}
+                <div className="flex items-center justify-between relative mb-2 w-full">
+                  <div className="absolute left-[10%] right-[10%] top-1/2 h-[2px] bg-gray-100 -z-10 -translate-y-1/2"></div>
+                  <div
+                    className="absolute left-[10%] top-1/2 h-[2px] bg-[#6B99A8] -z-10 -translate-y-1/2 transition-all duration-500"
+                    style={{ width: `${(app.currentStage / (app.stages.length - 1)) * 80}%` }}
+                  ></div>
+
+                  {app.stages.map((stage, index) => {
+                    const isActive = index <= app.currentStage;
+                    const isCurrent = index === app.currentStage;
+
+                    return (
+                      <div key={stage} className="flex flex-col items-center gap-2 sm:gap-3 bg-white px-1 sm:px-2">
+                        <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[9px] sm:text-[10px] border-2 transition-colors shrink-0 ${isActive ? 'bg-[#6B99A8] border-[#6B99A8] text-white' : 'bg-white border-gray-200 text-gray-300'
+                          } ${isCurrent ? 'ring-4 ring-[#6B99A8]/20' : ''}`}>
+                          {isActive ? <CheckCircle2 size={10} className="sm:w-[12px] sm:h-[12px]" strokeWidth={3} /> : index + 1}
+                        </div>
+                        <span className={`text-[8px] sm:text-[10px] font-medium uppercase tracking-wider text-center max-w-[50px] sm:max-w-none ${isActive ? 'text-[#1A1A1A]' : 'text-gray-400'}`}>
+                          {stage}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-5 sm:mt-6 bg-[#f4f8f9] border border-[#6B99A8]/20 px-3 sm:px-4 py-2.5 sm:py-3 rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
+                  <span className={`text-[11px] sm:text-[12px] font-medium ${app.state === 'REJECTED' ? 'text-red-500' : 'text-[#5B8D9E]'}`}>Current Status: {statusText}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </motion.div>
   );
