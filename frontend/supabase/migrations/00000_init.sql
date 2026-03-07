@@ -81,13 +81,22 @@ CREATE TABLE public.profiles (
 -- Trigger to create a profile automatically when a user signs up via Supabase Auth
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
+DECLARE
+  extracted_role user_role;
 BEGIN
+  -- We parse the role safely, default to STUDENT if parsing fails
+  BEGIN
+    extracted_role := CAST(COALESCE(NULLIF(new.raw_user_meta_data->>'role', ''), 'STUDENT') AS user_role);
+  EXCEPTION WHEN invalid_text_representation THEN
+    extracted_role := 'STUDENT'::user_role;
+  END;
+
   INSERT INTO public.profiles (id, email, name, role)
   VALUES (
     new.id,
     new.email,
     new.raw_user_meta_data->>'name',
-    CAST(COALESCE(NULLIF(new.raw_user_meta_data->>'role', ''), 'STUDENT') AS user_role)
+    extracted_role
   );
   RETURN new;
 END;
