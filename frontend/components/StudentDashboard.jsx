@@ -257,6 +257,11 @@ export default function StudentDashboard() {
       } finally {
         setResumeAnalyzing(false);
       }
+
+      // Clear the input value so the same file can be uploaded again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -736,10 +741,11 @@ export default function StudentDashboard() {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={resumeAnalyzing}
-              className="bg-white border border-gray-300 text-gray-700 px-5 sm:px-6 py-2 sm:py-2.5 text-[13px] sm:text-sm font-medium hover:border-[#6B99A8] hover:text-[#6B99A8] transition-colors rounded-sm disabled:opacity-50"
+              className="bg-white border border-gray-300 text-gray-700 px-5 sm:px-6 py-2 sm:py-2.5 text-[13px] sm:text-sm font-medium hover:border-[#6B99A8] hover:text-[#6B99A8] transition-colors rounded-sm disabled:opacity-50 flex items-center justify-center min-w-[150px]"
             >
-              {resumeAnalyzing ? 'Analyzing... (Takes ~10s)' : 'Select PDF File'}
+              {resumeAnalyzing ? <Loader2 size={16} className="animate-spin" /> : 'Select PDF File'}
             </button>
+            {resumeAnalyzing && <p className="text-[11px] text-[#6B99A8] mt-2 animate-pulse">Analyzing... This may take up to 10s.</p>}
             <p className="text-[10px] sm:text-[11px] text-[#5B8D9E] font-medium mt-6 sm:mt-8 text-center px-4">
               {uploadedFile ? `Current File: ${uploadedFile}` : "No file selected."}
             </p>
@@ -754,13 +760,23 @@ export default function StudentDashboard() {
                 <circle cx="50" cy="50" r="40" stroke="#6B99A8" strokeWidth="6" fill="none" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * atsScore) / 100} className="transition-all duration-1000 ease-out" />
               </svg>
               <div className="absolute flex flex-col items-center justify-center">
-                <span className="text-2xl sm:text-3xl font-medium text-[#1A1A1A]">{resumeResult ? atsScore : 'N/A'}</span>
-                {resumeResult && <span className="text-[9px] sm:text-[10px] text-gray-400 uppercase tracking-widest mt-0.5 sm:mt-1">/ 100</span>}
+                {resumeAnalyzing ? (
+                  <Loader2 size={24} className="text-[#6B99A8] animate-spin" />
+                ) : (
+                  <>
+                    <span className="text-2xl sm:text-3xl font-medium text-[#1A1A1A]">{resumeResult ? atsScore : 'N/A'}</span>
+                    {resumeResult && <span className="text-[9px] sm:text-[10px] text-gray-400 uppercase tracking-widest mt-0.5 sm:mt-1">/ 100</span>}
+                  </>
+                )}
               </div>
             </div>
 
             <div className="space-y-3 sm:space-y-4 mt-auto">
-              {!resumeResult ? (
+              {resumeAnalyzing ? (
+                <div className="text-center text-[12px] sm:text-[13px] text-[#6B99A8] pb-4 flex items-center justify-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Analyzing your resume...
+                </div>
+              ) : !resumeResult ? (
                 <div className="text-center text-[12px] sm:text-[13px] text-gray-500 pb-4">
                   Upload a resume to see your score and feedback.
                 </div>

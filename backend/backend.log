@@ -2,15 +2,6 @@
 > backend@1.0.0 dev
 > tsx watch src/index.ts
 
-/app/backend/node_modules/openai/src/client.ts:386
-      throw new Errors.OpenAIError(
-            ^
-
-OpenAIError: Missing credentials. Please pass an `apiKey`, or set the `OPENAI_API_KEY` environment variable.
-    at new OpenAI (/app/backend/node_modules/openai/src/client.ts:386:13)
-    at <anonymous> (/app/backend/src/routes/analyze.ts:19:16)
-    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
-    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
-    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
-
-Node.js v22.22.0
+Server running on http://localhost:3001
+Database connection FAILED on startup:
+   → Check your DATABASE_URL and network connectivity
