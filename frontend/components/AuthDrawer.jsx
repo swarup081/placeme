@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
-import { apiFetch } from "@/lib/api";
+import { supabase } from "@/lib/supabaseClient";
 import {
   GraduationCap, Building2, Briefcase, ArrowLeft, 
   X, Loader2, Mail, Lock, User, CheckCircle2, AlertCircle,
@@ -13,7 +13,7 @@ import {
 
 export default function AuthDrawer({ isOpen, onClose }) {
   const router = useRouter();
-  const { login } = useAuth();
+  const { refreshUser } = useAuth();
 
   const [authMode, setAuthMode] = useState("login");
   const [step, setStep] = useState(1);
@@ -21,12 +21,15 @@ export default function AuthDrawer({ isOpen, onClose }) {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
   const [error, setError] = useState(null);
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   // Form fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [cgpa, setCgpa] = useState("");
+  const [branch, setBranch] = useState("");
+
+  // Re-use for OTP
   const [otp, setOtp] = useState("");
 
   const resetState = () => {
@@ -39,6 +42,8 @@ export default function AuthDrawer({ isOpen, onClose }) {
     setEmail("");
     setPassword("");
     setName("");
+    setCgpa("");
+    setBranch("");
     setOtp("");
   };
 
@@ -47,93 +52,113 @@ export default function AuthDrawer({ isOpen, onClose }) {
     onClose();
   };
 
-  // ── LOGIN handler (all roles) ──────────────────────────
+  const handleRoleSelect = (role) => {
+    setSelectedRole(role);
+    setStep(2);
+  };
+
+  // ── ROUTING BASED ON ROLE ───────────────────────────────
+  const routeToDashboard = (role) => {
+    if (role === "STUDENT") router.push("/dashboard/student");
+    else if (role === "RECRUITER") router.push("/dashboard/company");
+    else if (role === "TNP") router.push("/dashboard/tnp");
+    else if (role === "ADMIN") router.push("/dashboard/tnp"); // Fallback
+    else router.push("/");
+  };
+
+  // ── LOGIN ──────────────────────────────────────────────
   const handleLogin = async (e) => {
-    e?.preventDefault();
+    e.preventDefault();
     setError("");
     setIsLoading(true);
-    setStep("loading");
-    setLoadingText("Authenticating…");
 
     try {
-      const res = await apiFetch("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        setError(data.error || "Login failed.");
-        setStep(2);
-        setIsLoading(false);
-        return;
-      }
+      if (signInError) throw signInError;
 
-      setLoadingText("Redirecting to dashboard…");
-      login(data.token, data.user);
+      // Ensure AuthContext picks it up
+      await refreshUser();
 
-      setTimeout(() => {
-        setIsLoading(false);
-        handleClose();
-        const role = (data.user.role || "student").toLowerCase();
-        router.push(`/dashboard/${role}`);
-      }, 800);
-    } catch {
-      setError("Failed to connect to server.");
-      setStep(2);
+      // Fetch profile to know the role
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single();
+
+      const userRole = profileData?.role || selectedRole?.toUpperCase() || "STUDENT";
+
+      handleClose();
+      routeToDashboard(userRole);
+    } catch (err) {
+      setError(err.message || "Invalid credentials.");
+    } finally {
       setIsLoading(false);
     }
   };
 
-  // ── STUDENT REGISTER: check-email ──────────────────────
-  const handleCheckEmail = async (e) => {
-    e?.preventDefault();
-    setError("");
-    setIsLoading(true);
+  // ── NEXT STEP ──────────────────────────────────────────
+  const handleNextStep = async (e) => {
+    e.preventDefault();
+    if (authMode === "login") {
+      await handleLogin(e);
+      return;
+    }
 
-    try {
-      const res = await apiFetch("/student/check-email", {
-        method: "POST",
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Email not eligible. Use your college email.");
-        setIsLoading(false);
+    if (step === 2 && selectedRole === "student") {
+      if (!name || !email || !password || !cgpa || !branch) {
+        setError("Please fill all fields.");
         return;
       }
-
-      // Email is valid → send OTP
-      setIsLoading(false);
       await handleSendOtp();
-    } catch {
-      setError("Failed to connect to server.");
-      setIsLoading(false);
+    } else if (step === 3) {
+      await handleVerifyOtp(e);
     }
   };
 
-  // ── STUDENT REGISTER: send-otp ─────────────────────────
+  // ── STUDENT REGISTER: SignUp (which sends confirmation) ─
   const handleSendOtp = async () => {
     setError("");
     setIsLoading(true);
 
     try {
-      const res = await apiFetch("/student/send-otp", {
-        method: "POST",
-        body: JSON.stringify({ email }),
+      // For Supabase, signUp with email/password handles verification implicitly if enabled.
+      // But we will pass user_metadata so the trigger can create the profile properly!
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name: name,
+            role: "STUDENT"
+          }
+        }
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        setError(data.error || "Failed to send OTP.");
-        setIsLoading(false);
-        return;
+      if (signUpError) throw signUpError;
+
+      // If email confirmation is enabled, they need OTP.
+      // If auto-confirm is on in local dev, this might just log them in directly.
+      if (data?.session) {
+        // Auto-confirmed! Update the profile with extra fields
+        await supabase.from("profiles").update({
+          cgpa: parseFloat(cgpa) || null,
+          branch: branch
+        }).eq("id", data.user.id);
+
+        await refreshUser();
+        handleClose();
+        routeToDashboard("STUDENT");
+      } else {
+        // Requires OTP verification
+        setStep(3);
       }
-
-      setStep(3); // Move to OTP input step
-    } catch {
-      setError("Failed to connect to server.");
+    } catch (err) {
+      setError(err.message || "Failed to register.");
     } finally {
       setIsLoading(false);
     }
@@ -145,83 +170,63 @@ export default function AuthDrawer({ isOpen, onClose }) {
     setError("");
     setIsLoading(true);
     setStep("loading");
-    setLoadingText("Verifying OTP…");
+    setLoadingText("Verifying your email...");
 
     try {
-      const res = await apiFetch("/student/verify-otp", {
-        method: "POST",
-        body: JSON.stringify({ email, otp, name, password }),
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        email,
+        token: otp,
+        type: "signup"
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        setError(data.error || "Verification failed.");
-        setStep(3);
-        setIsLoading(false);
-        return;
+      if (verifyError) throw verifyError;
+
+      // Update custom profile fields
+      if (data?.user) {
+         await supabase.from("profiles").update({
+            cgpa: parseFloat(cgpa) || null,
+            branch: branch
+         }).eq("id", data.user.id);
       }
 
-      setLoadingText("Account created! Redirecting…");
-      login(data.token, data.user);
+      await refreshUser();
 
+      setLoadingText("Setting up your dashboard...");
       setTimeout(() => {
-        setIsLoading(false);
         handleClose();
-        router.push("/dashboard/student");
-      }, 800);
-    } catch {
-      setError("Failed to connect to server.");
-      setStep(3);
+        routeToDashboard("STUDENT");
+      }, 1000);
+
+    } catch (err) {
+      setError(err.message || "Invalid or expired code.");
+      setStep(3); // Go back to OTP input
+    } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Handle "Next" based on current flow ────────────────
-  const handleNextStep = (e) => {
-    e?.preventDefault();
-
-    if (authMode === "login") {
-      handleLogin(e);
-      return;
-    }
-
-    // Register flow for student
-    if (step === 2) {
-      handleCheckEmail(e);
-      return;
-    }
-
-    if (step === 3) {
-      handleVerifyOtp(e);
-      return;
-    }
-  };
-
-  const roles = [
-    { id: "student", label: "Student", icon: GraduationCap, desc: "Access job listings & apply" },
-    { id: "tnp", label: "T&P Cell", icon: Building2, desc: "Manage placements" },
-    { id: "company", label: "Company", icon: Briefcase, desc: "Post jobs & hire" },
-  ];
 
   // ── RENDER: Role Selection ─────────────────────────────
   const renderRoleSelection = () => (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <p className="text-sm text-gray-500 mb-6">Choose your role to get started</p>
-      {roles.map((role) => (
+      <p className="text-sm text-gray-500 mb-6">Select how you want to use the platform</p>
+
+      {[
+        { id: "student", label: "Student", desc: "Find and apply for placements", icon: GraduationCap },
+        { id: "company", label: "Company / Recruiter", desc: "Hire top talent", icon: Building2 },
+        { id: "tnp", label: "T&P Cell", desc: "Manage campus placements", icon: Briefcase }
+      ].map((role) => (
         <button
           key={role.id}
-          onClick={() => {
-            setSelectedRole(role.id);
-            setStep(2); setError(null);
-          }}
-          className="w-full p-4 border border-gray-200 flex items-center gap-4 hover:border-[#2C6E8F]/40 hover:bg-[#f4f8f9] transition-all group text-left"
+          onClick={() => handleRoleSelect(role.id)}
+          className="w-full flex items-center p-4 border border-gray-100 rounded-sm hover:border-[#2C6E8F] hover:bg-[#f4f8f9] transition-all group text-left"
         >
-          <div className="w-10 h-10 bg-[#f4f8f9] rounded flex items-center justify-center text-[#2C6E8F] group-hover:bg-white transition-colors">
-            <role.icon size={20} />
+          <div className="w-10 h-10 rounded-sm bg-gray-50 flex items-center justify-center group-hover:bg-[#2C6E8F] transition-colors mr-4">
+            <role.icon size={20} className="text-gray-400 group-hover:text-white transition-colors" />
           </div>
-          <div>
-            <p className="text-sm font-medium text-[#1A1A1A]">{role.label}</p>
-            <p className="text-xs text-gray-500">{role.desc}</p>
+          <div className="flex-1">
+            <div className="text-sm font-medium text-[#1A1A1A] group-hover:text-[#2C6E8F]">{role.label}</div>
+            <div className="text-xs text-gray-400">{role.desc}</div>
           </div>
         </button>
       ))}
@@ -231,12 +236,16 @@ export default function AuthDrawer({ isOpen, onClose }) {
   // ── RENDER: Login Form ─────────────────────────────────
   const renderLoginForm = () => (
     <form onSubmit={handleNextStep} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <p className="text-sm text-gray-500 mb-4">
-        Sign in as <span className="font-semibold text-[#2C6E8F] capitalize">{selectedRole}</span>
-      </p>
-      
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-sm text-gray-500 capitalize">Sign in as {selectedRole || "Student"}</p>
+        <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-sm border border-gray-100">
+          <span className="flex w-1.5 h-1.5 rounded-full bg-green-500"></span>
+          <span className="text-[10px] text-gray-500 uppercase font-medium tracking-wider">System Operational</span>
+        </div>
+      </div>
+
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1.5">Email</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1.5">Email Address</label>
         <div className="relative">
           <Mail className="absolute left-3 top-3 text-gray-400" size={16} />
           <input
@@ -249,14 +258,12 @@ export default function AuthDrawer({ isOpen, onClose }) {
           />
         </div>
       </div>
-      {error && (
-        <div className="p-3 mb-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-sm">
-          {error}
-        </div>
-      )}
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1.5">Password</label>
+        <div className="flex justify-between items-center mb-1.5">
+          <label className="block text-xs font-medium text-gray-600">Password</label>
+          <button type="button" className="text-xs text-[#2C6E8F] hover:underline">Forgot password?</button>
+        </div>
         <div className="relative">
           <Lock className="absolute left-3 top-3 text-gray-400" size={16} />
           <input
@@ -286,7 +293,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
 
       {selectedRole === "student" && (
         <p className="text-center text-xs text-gray-400 mt-3">
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <button type="button" onClick={() => { setAuthMode("register"); setStep(2); setError(""); }} className="text-[#2C6E8F] hover:underline font-medium">Register</button>
         </p>
       )}
@@ -308,6 +315,34 @@ export default function AuthDrawer({ isOpen, onClose }) {
             onChange={(e) => setName(e.target.value)}
             className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
             placeholder="Your full name"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">CGPA</label>
+          <input
+            required
+            type="number"
+            step="0.01"
+            min="0"
+            max="10"
+            value={cgpa}
+            onChange={(e) => setCgpa(e.target.value)}
+            className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+            placeholder="e.g. 8.5"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">Branch</label>
+          <input
+            required
+            type="text"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+            placeholder="e.g. CSE"
           />
         </div>
       </div>
@@ -404,7 +439,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
       </button>
 
       <p className="text-center text-xs text-gray-400 mt-3">
-        Didn't receive the code?{" "}
+        Didn&apos;t receive the code?{" "}
         <button type="button" onClick={handleSendOtp} className="text-[#2C6E8F] hover:underline font-medium">Resend</button>
       </p>
     </form>
@@ -498,7 +533,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
             {/* Footer */}
             <div className="px-6 py-4 border-t border-gray-100 text-center">
               <p className="text-[11px] text-gray-400">
-                By continuing, you agree to PlaceMe's Terms of Service
+                By continuing, you agree to PlaceMe&apos;s Terms of Service
               </p>
             </div>
           </motion.div>
