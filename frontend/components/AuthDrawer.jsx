@@ -286,7 +286,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
 
       {selectedRole === "student" && (
         <p className="text-center text-xs text-gray-400 mt-3">
-          Don't have an account?{" "}
+          Don\x27t have an account?{" "}
           <button type="button" onClick={() => { setAuthMode("register"); setStep(2); setError(""); }} className="text-[#2C6E8F] hover:underline font-medium">Register</button>
         </p>
       )}
@@ -404,7 +404,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
       </button>
 
       <p className="text-center text-xs text-gray-400 mt-3">
-        Didn't receive the code?{" "}
+        Didn\x27t receive the code?{" "}
         <button type="button" onClick={handleSendOtp} className="text-[#2C6E8F] hover:underline font-medium">Resend</button>
       </p>
     </form>
@@ -498,7 +498,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
             {/* Footer */}
             <div className="px-6 py-4 border-t border-gray-100 text-center">
               <p className="text-[11px] text-gray-400">
-                By continuing, you agree to PlaceMe's Terms of Service
+                By continuing, you agree to PlaceMe\x27s Terms of Service
               </p>
             </div>
           </motion.div>
