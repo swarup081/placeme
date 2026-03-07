@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import OpenAI from 'openai';
-// @ts-ignore
-import pdfParse from 'pdf-parse';
+import * as pdfParseModule from 'pdf-parse';
+
+// Handle dynamic module resolution for pdf-parse
+const pdfParse = (pdfParseModule as any).default || pdfParseModule;
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
