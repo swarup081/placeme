@@ -294,75 +294,100 @@ export default function AuthDrawer({ isOpen, onClose }) {
   );
 
   // ── RENDER: Student Registration (Basic Info + Email) ──
-  const renderStudentRegistration = () => (
-    <form onSubmit={handleNextStep} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <p className="text-sm text-gray-500 mb-4">Create your student account</p>
-
-      <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1.5">Full Name</label>
-        <div className="relative">
-          <User className="absolute left-3 top-3 text-gray-400" size={16} />
-          <input
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
-            placeholder="Your full name"
-          />
+  const renderRegistrationForm = () => {
+    if (selectedRole === "tnp") {
+      return (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 text-center py-6">
+          <Building2 size={48} className="text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-[#1A1A1A]">Admin Invite Required</h3>
+          <p className="text-sm text-gray-500 leading-relaxed mb-6">
+            T&P Cell accounts can only be created via an invitation link sent by a platform administrator.
+          </p>
+          <p className="text-center text-xs text-gray-500">
+            Are you an Admin?{" "}
+            <a href="/dashboard/admin" onClick={handleClose} className="text-[#2C6E8F] hover:underline font-medium">Go to Admin Dashboard</a>
+          </p>
+          <div className="pt-4 border-t border-gray-100 mt-4">
+            <button type="button" onClick={() => { setAuthMode("login"); setStep(2); setError(""); }} className="text-sm text-[#1A1A1A] font-medium hover:underline">
+              I already have an account
+            </button>
+          </div>
         </div>
-      </div>
+      );
+    }
 
-      <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1.5">College Email</label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-3 text-gray-400" size={16} />
-          <input
-            required
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
-            placeholder="you@college.edu"
-          />
+    return (
+      <form onSubmit={handleNextStep} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <p className="text-sm text-gray-500 mb-4">Create your {selectedRole} account</p>
+
+        {selectedRole === "student" && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5">Full Name</label>
+            <div className="relative">
+              <User className="absolute left-3 top-3 text-gray-400" size={16} />
+              <input
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+                placeholder="e.g. John Doe"
+              />
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">Email Address</label>
+          <div className="relative">
+            <Mail className="absolute left-3 top-3 text-gray-400" size={16} />
+            <input
+              required
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+              placeholder={selectedRole === "student" ? "you@college.edu" : "recruiter@company.com"}
+            />
+          </div>
+          {selectedRole === "student" && <p className="text-[11px] text-gray-400 mt-1.5">Must use a registered college domain.</p>}
         </div>
-        <p className="text-[11px] text-gray-400 mt-1.5">Use your official college email address</p>
-      </div>
 
-      <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1.5">Password</label>
-        <div className="relative">
-          <Lock className="absolute left-3 top-3 text-gray-400" size={16} />
-          <input
-            required
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
-            placeholder="At least 6 characters"
-          />
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">Create Password</label>
+          <div className="relative">
+            <Lock className="absolute left-3 top-3 text-gray-400" size={16} />
+            <input
+              required
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+              placeholder="At least 6 characters"
+            />
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2.5 rounded-sm">
-          <AlertCircle size={14} />{error}
-        </motion.div>
-      )}
+        {error && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2.5 rounded-sm">
+            <AlertCircle size={14} />{error}
+          </motion.div>
+        )}
 
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full bg-[#1A1A1A] text-white p-3 text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-      >
-        {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Verify Email"}
-      </button>
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="w-full bg-[#1A1A1A] text-white p-3 text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+        >
+          {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Verify Email"}
+        </button>
 
-      <p className="text-center text-xs text-gray-400 mt-3">
-        Already have an account?{" "}
-        <button type="button" onClick={() => { setAuthMode("login"); setStep(2); setError(""); }} className="text-[#2C6E8F] hover:underline font-medium">Sign in</button>
-      </p>
-    </form>
-  );
+        <p className="text-center text-xs text-gray-400 mt-3">
+          Already have an account?{" "}
+          <button type="button" onClick={() => { setAuthMode("login"); setStep(2); setError(""); }} className="text-[#2C6E8F] hover:underline font-medium">Sign in</button>
+        </p>
+      </form>
+    );
+  };
 
   // ── RENDER: OTP Verification ───────────────────────────
   const renderOtpStep = () => (

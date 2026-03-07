@@ -237,6 +237,7 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
         const [user] = await db
             .insert(schema.users)
             .values({
+                name: req.body.name || null,
                 email: email.toLowerCase(),
                 passwordHash,
                 role: 'STUDENT',
