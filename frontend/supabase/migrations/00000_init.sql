@@ -87,7 +87,7 @@ BEGIN
     new.id,
     new.email,
     new.raw_user_meta_data->>'name',
-    CAST(COALESCE(new.raw_user_meta_data->>'role', 'STUDENT') AS user_role)
+    CAST(COALESCE(NULLIF(new.raw_user_meta_data->>'role', ''), 'STUDENT') AS user_role)
   );
   RETURN new;
 END;
