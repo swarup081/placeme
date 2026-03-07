@@ -179,8 +179,8 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
                 company: schema.companies.name
             })
             .from(schema.jobs)
-            .innerJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
-            .innerJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
+            .leftJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
+            .leftJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
             .where(
                 and(
                     eq(schema.jobs.state, 'SUBMITTED'),
