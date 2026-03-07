@@ -91,7 +91,8 @@ function SetupAccountForm() {
 
       // Redirect to the appropriate dashboard
       setTimeout(() => {
-        const role = (data.user.role || tokenRole).toLowerCase();
+        let role = (data.user.role || tokenRole).toLowerCase();
+        if (role === "recruiter") role = "company";
         router.push(`/dashboard/${role}`);
       }, 1500);
     } catch {

@@ -98,16 +98,26 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
                 name,
                 email: invitation.email,
                 passwordHash,
-                role: 'TNP',
+                role: invitation.role,
             })
             .returning();
 
-        // Create tnp_profiles row (collegeId null for now — they set it up later)
-        await db
-            .insert(schema.tnpProfiles)
-            .values({
-                id: user.id,
-            });
+        if (invitation.role === 'TNP') {
+            // Create tnp_profiles row (collegeId null for now — they set it up later)
+            await db
+                .insert(schema.tnpProfiles)
+                .values({
+                    id: user.id,
+                });
+        } else if (invitation.role === 'RECRUITER') {
+            // Create recruiter profile
+            await db
+                .insert(schema.recruiters)
+                .values({
+                    id: user.id,
+                    companyId: null,
+                });
+        }
 
         // Mark invitation as used
         await db

@@ -21,7 +21,6 @@ export default function AuthDrawer({ isOpen, onClose }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [loadingText, setLoadingText] = useState("");
-  const [error, setError] = useState(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   // Form fields
@@ -76,7 +75,8 @@ export default function AuthDrawer({ isOpen, onClose }) {
       setTimeout(() => {
         setIsLoading(false);
         handleClose();
-        const role = (data.user.role || "student").toLowerCase();
+        let role = (data.user.role || "student").toLowerCase();
+        if (role === "recruiter") role = "company";
         router.push(`/dashboard/${role}`);
       }, 800);
     } catch {
@@ -110,6 +110,70 @@ export default function AuthDrawer({ isOpen, onClose }) {
       await handleSendOtp();
     } catch {
       setError("Failed to connect to server.");
+      setIsLoading(false);
+    }
+  };
+
+  // ── COMPANY REGISTER: send-otp ─────────────────────────
+  const handleCompanySendOtp = async (e) => {
+    e?.preventDefault();
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const res = await apiFetch("/recruiter/send-otp", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to send OTP.");
+        setIsLoading(false);
+        return;
+      }
+
+      setStep(3); // Move to OTP input step
+    } catch {
+      setError("Failed to connect to server.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── COMPANY REGISTER: verify-otp ───────────────────────
+  const handleCompanyVerifyOtp = async (e) => {
+    e?.preventDefault();
+    setError("");
+    setIsLoading(true);
+    setStep("loading");
+    setLoadingText("Verifying OTP…");
+
+    try {
+      const res = await apiFetch("/recruiter/verify-otp", {
+        method: "POST",
+        body: JSON.stringify({ email, otp, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Verification failed.");
+        setStep(3);
+        setIsLoading(false);
+        return;
+      }
+
+      setLoadingText("Account created! Redirecting…");
+      login(data.token, data.user);
+
+      setTimeout(() => {
+        setIsLoading(false);
+        handleClose();
+        router.push("/dashboard/company");
+      }, 800);
+    } catch {
+      setError("Failed to connect to server.");
+      setStep(3);
       setIsLoading(false);
     }
   };
@@ -187,14 +251,27 @@ export default function AuthDrawer({ isOpen, onClose }) {
     }
 
     // Register flow for student
-    if (step === 2) {
-      handleCheckEmail(e);
-      return;
+    if (selectedRole === "student") {
+      if (step === 2) {
+        handleCheckEmail(e);
+        return;
+      }
+      if (step === 3) {
+        handleVerifyOtp(e);
+        return;
+      }
     }
 
-    if (step === 3) {
-      handleVerifyOtp(e);
-      return;
+    // Register flow for company
+    if (selectedRole === "company") {
+      if (step === 2) {
+        handleCompanySendOtp(e);
+        return;
+      }
+      if (step === 3) {
+        handleCompanyVerifyOtp(e);
+        return;
+      }
     }
   };
 
@@ -285,12 +362,69 @@ export default function AuthDrawer({ isOpen, onClose }) {
         {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Sign In"}
       </button>
 
-      {selectedRole === "student" && (
+      {(selectedRole === "student" || selectedRole === "company") && (
         <p className="text-center text-xs text-gray-400 mt-3">
           Don't have an account?{" "}
           <button type="button" onClick={() => { setAuthMode("register"); setStep(2); setError(""); }} className="text-[#2C6E8F] hover:underline font-medium">Register</button>
         </p>
       )}
+    </form>
+  );
+
+  // ── RENDER: Company Registration (Basic Info) ──────────
+  const renderCompanyRegistration = () => (
+    <form onSubmit={handleNextStep} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <p className="text-sm text-gray-500 mb-4">Create your company account</p>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1.5">Work Email</label>
+        <div className="relative">
+          <Mail className="absolute left-3 top-3 text-gray-400" size={16} />
+          <input
+            required
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+            placeholder="you@company.com"
+          />
+        </div>
+        <p className="text-[11px] text-gray-400 mt-1.5">Use your official work email address</p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1.5">Password</label>
+        <div className="relative">
+          <Lock className="absolute left-3 top-3 text-gray-400" size={16} />
+          <input
+            required
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+            placeholder="At least 6 characters"
+          />
+        </div>
+      </div>
+
+      {error && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2.5 rounded-sm">
+          <AlertCircle size={14} />{error}
+        </motion.div>
+      )}
+
+      <button
+        type="submit"
+        disabled={isLoading}
+        className="w-full bg-[#1A1A1A] text-white p-3 text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+      >
+        {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Verify Email"}
+      </button>
+
+      <p className="text-center text-xs text-gray-400 mt-3">
+        Already have an account?{" "}
+        <button type="button" onClick={() => { setAuthMode("login"); setStep(2); setError(""); }} className="text-[#2C6E8F] hover:underline font-medium">Sign in</button>
+      </p>
     </form>
   );
 
@@ -406,7 +540,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
 
       <p className="text-center text-xs text-gray-400 mt-3">
         Didn't receive the code?{" "}
-        <button type="button" onClick={handleSendOtp} className="text-[#2C6E8F] hover:underline font-medium">Resend</button>
+        <button type="button" onClick={selectedRole === "company" ? handleCompanySendOtp : handleSendOtp} className="text-[#2C6E8F] hover:underline font-medium">Resend</button>
       </p>
     </form>
   );
@@ -428,7 +562,10 @@ export default function AuthDrawer({ isOpen, onClose }) {
     if (authMode === "login" && step === 2) return renderLoginForm();
 
     if (authMode === "register") {
-      if (step === 2) return renderStudentRegistration();
+      if (step === 2) {
+        if (selectedRole === "student") return renderStudentRegistration();
+        if (selectedRole === "company") return renderCompanyRegistration();
+      }
       if (step === 3) return renderOtpStep();
     }
 

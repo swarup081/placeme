@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight, Menu } from "lucide-react"; // Added Menu icon
 import Image from "next/image";
 import AuthDrawer from "./AuthDrawer"; // Adjust the import path as needed
 
-export default function Hero() {
+function HeroContent() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const toggleDrawer = (state: boolean) => {
@@ -16,6 +17,13 @@ export default function Hero() {
       document.body.style.overflow = "unset";
     }
   };
+
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("auth") === "true") {
+      toggleDrawer(true);
+    }
+  }, [searchParams]);
 
   return (
     <>
@@ -182,5 +190,13 @@ export default function Hero() {
       {/* Global Auth Drawer Component */}
       <AuthDrawer isOpen={isDrawerOpen} onClose={() => toggleDrawer(false)} />
     </>
+  );
+}
+
+export default function Hero() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <HeroContent />
+    </Suspense>
   );
 }
