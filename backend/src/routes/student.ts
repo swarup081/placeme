@@ -289,8 +289,21 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
 router.get('/profile', authenticate, requireRole('STUDENT'), async (req: Request, res: Response): Promise<void> => {
     try {
         const [student] = await db
-            .select()
+            .select({
+                id: schema.students.id,
+                collegeId: schema.students.collegeId,
+                cgpa: schema.students.cgpa,
+                branch: schema.students.branch,
+                graduationYear: schema.students.graduationYear,
+                state: schema.students.state,
+                verifiedBy: schema.students.verifiedBy,
+                verifiedAt: schema.students.verifiedAt,
+                createdAt: schema.students.createdAt,
+                name: schema.users.name,
+                email: schema.users.email,
+            })
             .from(schema.students)
+            .innerJoin(schema.users, eq(schema.students.id, schema.users.id))
             .where(eq(schema.students.id, req.user!.id))
             .limit(1);
 
@@ -317,6 +330,8 @@ router.get('/profile', authenticate, requireRole('STUDENT'), async (req: Request
                 verifiedBy: student.verifiedBy,
                 verifiedAt: student.verifiedAt,
                 createdAt: student.createdAt,
+                name: student.name,
+                email: student.email,
             },
             college: college || null,
         });

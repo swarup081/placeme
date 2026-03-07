@@ -150,13 +150,23 @@ export default function CompanyDashboard() {
   const handlePostJob = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
+
+    // Find the college ID from the inputted name
+    const selectedCollegeName = formData.get("collegeNameInput");
+    const matchedCollege = colleges.find(c => c.name === selectedCollegeName);
+
+    if (!matchedCollege) {
+      showToast("Please select a valid college from the list.");
+      return;
+    }
+
     const jobData = {
       title: formData.get("title"),
       description: formData.get("description"),
       type: formData.get("type"),
       location: formData.get("location"),
       ctc: formData.get("ctc"),
-      collegeId: formData.get("collegeId"),
+      collegeId: matchedCollege.id,
     };
 
     try {
@@ -367,12 +377,18 @@ export default function CompanyDashboard() {
           <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Job Title</label><input name="title" required type="text" placeholder="e.g. Software Engineer Intern" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
           <div>
             <label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Target College</label>
-            <select name="collegeId" required className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white">
-              <option value="">Select a college</option>
+            <input
+              name="collegeNameInput"
+              list="colleges-list"
+              required
+              placeholder="Search or select a college..."
+              className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white"
+            />
+            <datalist id="colleges-list">
               {colleges.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.name} data-id={c.id} />
               ))}
-            </select>
+            </datalist>
           </div>
           <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Employment Type</label><select name="type" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white"><option>Full-Time</option><option>Internship</option></select></div>
           <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Location</label><input name="location" required type="text" placeholder="e.g. Remote, Bangalore" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>

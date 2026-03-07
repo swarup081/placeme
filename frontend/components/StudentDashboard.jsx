@@ -46,6 +46,8 @@ export default function StudentDashboard() {
   const [applicationsDetailed, setApplicationsDetailed] = useState([]);
   const [recentApplications, setRecentApplications] = useState([]);
   const [upcomingInterviews, setUpcomingInterviews] = useState([]);
+  const [studentProfile, setStudentProfile] = useState(null);
+  const [collegeProfile, setCollegeProfile] = useState(null);
 
   const loadDashboardData = async () => {
     try {
@@ -55,6 +57,19 @@ export default function StudentDashboard() {
         setStats(data.stats);
         setRecentApplications(data.recentApplications || []);
         setUpcomingInterviews(data.upcomingInterviews || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadProfile = async () => {
+    try {
+      const res = await apiFetch("/student/profile");
+      const data = await res.json();
+      if (res.ok) {
+        setStudentProfile(data.student);
+        setCollegeProfile(data.college);
       }
     } catch (err) {
       console.error(err);
@@ -115,6 +130,7 @@ export default function StudentDashboard() {
     loadDashboardData();
     loadJobs();
     loadApplications();
+    loadProfile();
   }, []);
 
   const categories = ["All", "Engineering", "Marketing", "HR & Operations", "Business Development"];
@@ -340,18 +356,18 @@ export default function StudentDashboard() {
           <div className="bg-white border border-gray-200 p-6 sm:p-8 flex flex-col items-center text-center">
             <div className="relative cursor-pointer" onClick={() => showToast("Avatar upload modal opened.")}>
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-tr from-[#6B99A8] to-[#92b5c1] flex items-center justify-center text-white text-2xl sm:text-3xl font-light tracking-wider mb-4 shadow-sm hover:opacity-90 transition-opacity">
-                JD
+                {studentProfile?.name ? studentProfile.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() : "ST"}
               </div>
               <div className="absolute bottom-4 right-0 bg-white border border-gray-200 p-1.5 rounded-full text-gray-500 hover:text-black shadow-sm transition-colors">
                 <Edit2 size={12} className="sm:w-[14px] sm:h-[14px]" />
               </div>
             </div>
-            <h3 className="text-lg sm:text-xl font-medium text-[#1A1A1A]">John Doe</h3>
-            <p className="text-[12px] sm:text-[13px] text-gray-500 mt-1">Computer Science & Engineering</p>
+            <h3 className="text-lg sm:text-xl font-medium text-[#1A1A1A]">{studentProfile?.name || "Student"}</h3>
+            <p className="text-[12px] sm:text-[13px] text-gray-500 mt-1">{studentProfile?.branch || "Unknown Branch"}</p>
             <div className="w-full border-t border-gray-100 mt-6 pt-6 space-y-4 text-left">
               <div>
                 <label className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold block mb-1">Email (Verified)</label>
-                <p className="text-[12px] sm:text-[13px] text-gray-800 font-medium">john.doe@college.edu</p>
+                <p className="text-[12px] sm:text-[13px] text-gray-800 font-medium">{studentProfile?.email || "Unknown Email"}</p>
               </div>
               <div>
                 <label className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold block mb-1">Phone</label>
@@ -367,19 +383,19 @@ export default function StudentDashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">University / College</label>
-                <input type="text" readOnly defaultValue="National Institute of Technology" className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
+                <input type="text" readOnly value={collegeProfile?.name || "Unknown College"} className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
               </div>
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Degree & Branch</label>
-                <input type="text" readOnly defaultValue="B.Tech - CSE" className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
+                <input type="text" readOnly value={studentProfile?.branch || "Unknown Branch"} className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
               </div>
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Graduation Year</label>
-                <input type="text" readOnly defaultValue="2026" className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
+                <input type="text" readOnly value={studentProfile?.graduationYear || "Unknown"} className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
               </div>
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Current CGPA (Verified)</label>
-                <input type="text" readOnly defaultValue="8.94 / 10.0" className="w-full border border-[#6B99A8]/30 bg-[#f4f8f9]/50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-[#5B8D9E] font-medium outline-none rounded-sm" />
+                <input type="text" readOnly value={studentProfile?.cgpa || "Unknown"} className="w-full border border-[#6B99A8]/30 bg-[#f4f8f9]/50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-[#5B8D9E] font-medium outline-none rounded-sm" />
               </div>
             </div>
           </div>

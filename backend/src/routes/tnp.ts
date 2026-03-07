@@ -619,4 +619,54 @@ router.post('/students/:studentId/reject', async (req: Request, res: Response): 
     }
 });
 
+/**
+ * POST /tnp/broadcast
+ * Broadcasts a message to all students in the T&P's college.
+ */
+router.post('/broadcast', async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { message, type } = req.body;
+
+        if (!message) {
+            res.status(400).json({ error: 'Message is required' });
+            return;
+        }
+
+        const [profile] = await db
+            .select()
+            .from(schema.tnpProfiles)
+            .where(eq(schema.tnpProfiles.id, req.user!.id))
+            .limit(1);
+
+        if (!profile || !profile.collegeId) {
+            res.status(400).json({ error: 'College not configured yet' });
+            return;
+        }
+
+        const collegeStudents = await db
+            .select({ id: schema.students.id })
+            .from(schema.students)
+            .where(eq(schema.students.collegeId, profile.collegeId));
+
+        if (collegeStudents.length === 0) {
+            res.json({ message: 'No students to broadcast to.' });
+            return;
+        }
+
+        const notificationsData = collegeStudents.map(student => ({
+            userId: student.id,
+            type: type || 'broadcast',
+            message: message,
+            read: false
+        }));
+
+        await db.insert(schema.notifications).values(notificationsData);
+
+        res.json({ message: `Broadcast sent successfully to ${collegeStudents.length} students` });
+    } catch (err) {
+        console.error('Broadcast error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 export default router;

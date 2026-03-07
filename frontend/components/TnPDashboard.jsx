@@ -19,6 +19,8 @@ export default function TnPDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState("");
 
   // College setup state
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -156,6 +158,26 @@ export default function TnPDashboard() {
       setIsExporting(false);
       showToast("Student directory exported successfully as CSV!");
     }, 2500);
+  };
+
+  const handleBroadcast = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await apiFetch("/tnp/broadcast", {
+        method: "POST",
+        body: JSON.stringify({ message: broadcastMessage })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast("Broadcast message sent to all students.");
+        setShowBroadcastModal(false);
+        setBroadcastMessage("");
+      } else {
+        showToast(data.error || "Failed to send broadcast");
+      }
+    } catch (err) {
+      showToast("Failed to connect to server");
+    }
   };
 
   const handleTabChange = (tab) => {
@@ -300,9 +322,9 @@ export default function TnPDashboard() {
            <div className="p-4 border border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0">
               <div>
                 <p className="text-sm font-medium text-[#1A1A1A]">Broadcast Notice</p>
-                <p className="text-xs text-gray-500 mt-1">Send a custom email/SMS alert to batch 2026</p>
+                <p className="text-xs text-gray-500 mt-1">Send a custom alert to all students</p>
               </div>
-              <button onClick={() => showToast("Broadcast portal opened.")} className="text-xs bg-[#1A1A1A] text-white px-4 py-2 rounded-sm hover:bg-black transition-colors self-start sm:self-auto w-full sm:w-auto">Create</button>
+              <button onClick={() => setShowBroadcastModal(true)} className="text-xs bg-[#1A1A1A] text-white px-4 py-2 rounded-sm hover:bg-black transition-colors self-start sm:self-auto w-full sm:w-auto">Create</button>
            </div>
            <div className="p-4 border border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0">
               <div>
@@ -509,6 +531,31 @@ export default function TnPDashboard() {
 
   return (
     <div className="min-h-screen bg-[#fafbfc] flex font-sans relative">
+
+      {/* Broadcast Modal */}
+      <AnimatePresence>
+        {showBroadcastModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[150] bg-[#1A1A1A]/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="bg-white border border-gray-200 shadow-2xl max-w-lg w-full p-6 sm:p-8 rounded-sm relative">
+              <button onClick={() => setShowBroadcastModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black"><X size={20}/></button>
+              <h3 className="text-lg sm:text-xl font-medium text-[#1A1A1A] mb-4">Broadcast Notice</h3>
+              <p className="text-[13px] text-gray-500 mb-6">Send a notification to all registered students in your college.</p>
+              <form onSubmit={handleBroadcast}>
+                <textarea
+                  required
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  rows={4}
+                  placeholder="Type your message here..."
+                  className="w-full border border-gray-200 p-3 text-[13px] focus:outline-none focus:border-[#6B99A8] rounded-sm resize-none mb-4"
+                ></textarea>
+                <button type="submit" className="w-full bg-[#1A1A1A] text-white py-2.5 text-[13px] font-medium hover:bg-black transition-colors rounded-sm">Send Broadcast</button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {toast && (
           <motion.div initial={{ opacity: 0, y: 50, x: "-50%" }} animate={{ opacity: 1, y: 0, x: "-50%" }} exit={{ opacity: 0, y: 20, x: "-50%" }} className="fixed bottom-6 sm:bottom-10 left-1/2 z-[200] bg-[#1A1A1A] text-white px-4 sm:px-6 py-3 rounded-sm shadow-xl flex items-center gap-3 text-xs sm:text-sm font-medium w-[90%] sm:w-auto justify-center text-center">
