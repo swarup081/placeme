@@ -21,6 +21,8 @@ export default function AuthDrawer({ isOpen, onClose }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [loadingText, setLoadingText] = useState("");
+  const [error, setError] = useState(null);
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   // Form fields
   const [email, setEmail] = useState("");
@@ -211,7 +213,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
           key={role.id}
           onClick={() => {
             setSelectedRole(role.id);
-            setStep(2);
+            setStep(2); setError(null);
           }}
           className="w-full p-4 border border-gray-200 flex items-center gap-4 hover:border-[#2C6E8F]/40 hover:bg-[#f4f8f9] transition-all group text-left"
         >
@@ -248,6 +250,11 @@ export default function AuthDrawer({ isOpen, onClose }) {
           />
         </div>
       </div>
+      {error && (
+        <div className="p-3 mb-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-sm">
+          {error}
+        </div>
+      )}
 
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1.5">Password</label>
