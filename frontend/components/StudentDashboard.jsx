@@ -336,6 +336,48 @@ export default function StudentDashboard() {
     </motion.div>
   );
 
+  const [profileForm, setProfileForm] = useState({
+    name: "",
+    branch: "",
+    graduationYear: "",
+    cgpa: "",
+  });
+
+  useEffect(() => {
+    if (studentProfile) {
+      setProfileForm({
+        name: studentProfile.name || "",
+        branch: studentProfile.branch || "",
+        graduationYear: studentProfile.graduationYear || "",
+        cgpa: studentProfile.cgpa || "",
+      });
+    }
+  }, [studentProfile]);
+
+  const handleSaveProfile = async () => {
+    if (studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED') {
+      showToast(`Cannot edit profile while in state: ${studentProfile?.state}`);
+      return;
+    }
+
+    try {
+      const res = await apiFetch("/student/profile", {
+        method: "PUT",
+        body: JSON.stringify(profileForm)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast("Profile submitted for verification!");
+        loadProfile();
+        loadDashboardData();
+      } else {
+        showToast(data.error || "Failed to update profile.");
+      }
+    } catch (err) {
+      showToast("Failed to connect to server.");
+    }
+  };
+
   const renderProfile = () => (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 sm:mb-8 gap-4">
@@ -344,10 +386,10 @@ export default function StudentDashboard() {
           <p className="text-[13px] sm:text-[15px] text-gray-500 mt-1 sm:mt-2">Manage your verified data, academics, and portfolio links.</p>
         </div>
         <button 
-          onClick={() => showToast("Profile changes saved successfully!")}
+          onClick={handleSaveProfile}
           className="bg-[#1A1A1A] text-white px-5 sm:px-6 py-2 text-[12px] sm:text-[13px] font-medium rounded-sm hover:bg-black transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
         >
-          Save Changes
+          Submit for Verification
         </button>
       </div>
 
@@ -362,16 +404,33 @@ export default function StudentDashboard() {
                 <Edit2 size={12} className="sm:w-[14px] sm:h-[14px]" />
               </div>
             </div>
-            <h3 className="text-lg sm:text-xl font-medium text-[#1A1A1A]">{studentProfile?.name || "Student"}</h3>
-            <p className="text-[12px] sm:text-[13px] text-gray-500 mt-1">{studentProfile?.branch || "Unknown Branch"}</p>
+
+            {studentProfile?.state === 'REGISTERED' || studentProfile?.state === 'REJECTED' ? (
+               <input
+                 className="text-lg sm:text-xl font-medium text-[#1A1A1A] text-center w-full border-b border-gray-200 focus:outline-none focus:border-[#6B99A8]"
+                 value={profileForm.name}
+                 onChange={e => setProfileForm({...profileForm, name: e.target.value})}
+                 placeholder="Your Full Name"
+               />
+            ) : (
+              <h3 className="text-lg sm:text-xl font-medium text-[#1A1A1A]">{studentProfile?.name || "Student"}</h3>
+            )}
+
+            <p className="text-[12px] sm:text-[13px] text-gray-500 mt-1">{studentProfile?.branch || "Branch not set"}</p>
             <div className="w-full border-t border-gray-100 mt-6 pt-6 space-y-4 text-left">
               <div>
                 <label className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold block mb-1">Email (Verified)</label>
                 <p className="text-[12px] sm:text-[13px] text-gray-800 font-medium">{studentProfile?.email || "Unknown Email"}</p>
               </div>
               <div>
-                <label className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold block mb-1">Phone</label>
-                <input type="text" defaultValue="+91 98765 43210" className="w-full text-[12px] sm:text-[13px] text-gray-800 font-medium border-b border-transparent hover:border-gray-200 focus:border-[#6B99A8] focus:outline-none bg-transparent py-1 transition-colors" />
+                <label className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold block mb-1">Status</label>
+                <span className={`text-[10px] font-semibold px-2 py-1 rounded border uppercase tracking-wider inline-block ${
+                  studentProfile?.state === 'VERIFIED' ? 'bg-green-50 text-green-700 border-green-200' :
+                  studentProfile?.state === 'PENDING_VERIFICATION' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                  'bg-gray-100 text-gray-600 border-gray-200'
+                }`}>
+                  {studentProfile?.state || "Unknown"}
+                </span>
               </div>
             </div>
           </div>
@@ -387,15 +446,37 @@ export default function StudentDashboard() {
               </div>
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Degree & Branch</label>
-                <input type="text" readOnly value={studentProfile?.branch || "Unknown Branch"} className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
+                <input
+                  type="text"
+                  value={profileForm.branch}
+                  onChange={e => setProfileForm({...profileForm, branch: e.target.value})}
+                  readOnly={studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED'}
+                  className={`w-full border border-gray-200 p-2.5 sm:p-3 text-[12px] sm:text-[13px] outline-none rounded-sm ${studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED' ? 'bg-gray-50 text-gray-600' : 'bg-white focus:border-[#6B99A8]'}`}
+                  placeholder="e.g. B.Tech CSE"
+                />
               </div>
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Graduation Year</label>
-                <input type="text" readOnly value={studentProfile?.graduationYear || "Unknown"} className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
+                <input
+                  type="number"
+                  value={profileForm.graduationYear}
+                  onChange={e => setProfileForm({...profileForm, graduationYear: e.target.value})}
+                  readOnly={studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED'}
+                  className={`w-full border border-gray-200 p-2.5 sm:p-3 text-[12px] sm:text-[13px] outline-none rounded-sm ${studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED' ? 'bg-gray-50 text-gray-600' : 'bg-white focus:border-[#6B99A8]'}`}
+                  placeholder="e.g. 2026"
+                />
               </div>
               <div>
-                <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Current CGPA (Verified)</label>
-                <input type="text" readOnly value={studentProfile?.cgpa || "Unknown"} className="w-full border border-[#6B99A8]/30 bg-[#f4f8f9]/50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-[#5B8D9E] font-medium outline-none rounded-sm" />
+                <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Current CGPA</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={profileForm.cgpa}
+                  onChange={e => setProfileForm({...profileForm, cgpa: e.target.value})}
+                  readOnly={studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED'}
+                  className={`w-full border p-2.5 sm:p-3 text-[12px] sm:text-[13px] outline-none rounded-sm ${studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED' ? 'border-[#6B99A8]/30 bg-[#f4f8f9]/50 text-[#5B8D9E] font-medium' : 'border-gray-200 bg-white focus:border-[#6B99A8]'}`}
+                  placeholder="e.g. 8.5"
+                />
               </div>
             </div>
           </div>

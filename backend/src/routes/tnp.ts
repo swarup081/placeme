@@ -204,7 +204,41 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
             }
         });
 
-        res.json({ stats, pendingApprovals: mappedApprovals });
+        // Placement Analytics Data (Branch-wise, YoY, CTC distribution)
+        // These would normally be complex aggregations, but we can compute them here
+        const placements = await db
+            .select({
+                branch: schema.students.branch,
+                cgpa: schema.students.cgpa,
+            })
+            .from(schema.students)
+            .where(
+                and(
+                    eq(schema.students.collegeId, profile.collegeId),
+                    eq(schema.students.state, 'PLACED')
+                )
+            );
+
+        const branchStats: Record<string, number> = {};
+        placements.forEach(p => {
+            if (p.branch) {
+                branchStats[p.branch] = (branchStats[p.branch] || 0) + 1;
+            }
+        });
+
+        // Convert to percentage array
+        const branchWisePlacements = Object.entries(branchStats).map(([branch, count]) => ({
+            branch,
+            val: Math.round((count / Math.max(stats.totalStudents, 1)) * 100)
+        }));
+
+        res.json({
+            stats,
+            pendingApprovals: mappedApprovals,
+            analytics: {
+                branchWisePlacements
+            }
+        });
     } catch (err) {
         console.error('TNP Dashboard error:', err);
         res.status(500).json({ error: 'Internal server error' });

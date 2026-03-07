@@ -343,15 +343,15 @@ router.get('/profile', authenticate, requireRole('STUDENT'), async (req: Request
 
 /**
  * PUT /student/profile
- * Body: { cgpa, branch, graduationYear }
+ * Body: { name, cgpa, branch, graduationYear }
  * Updates academic details and sets state to PENDING_VERIFICATION.
  */
 router.put('/profile', authenticate, requireRole('STUDENT'), async (req: Request, res: Response): Promise<void> => {
     try {
-        const { cgpa, branch, graduationYear } = req.body;
+        const { name, cgpa, branch, graduationYear } = req.body;
 
-        if (!cgpa || !branch || !graduationYear) {
-            res.status(400).json({ error: 'cgpa, branch, and graduationYear are required' });
+        if (!name || !cgpa || !branch || !graduationYear) {
+            res.status(400).json({ error: 'name, cgpa, branch, and graduationYear are required' });
             return;
         }
 
@@ -384,6 +384,12 @@ router.put('/profile', authenticate, requireRole('STUDENT'), async (req: Request
             })
             .where(eq(schema.students.id, req.user!.id))
             .returning();
+
+        // Update user name
+        await db
+            .update(schema.users)
+            .set({ name })
+            .where(eq(schema.users.id, req.user!.id));
 
         res.json({
             message: 'Profile updated. Awaiting verification.',

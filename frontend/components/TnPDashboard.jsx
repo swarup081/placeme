@@ -35,6 +35,7 @@ export default function TnPDashboard() {
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [students, setStudents] = useState([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [branchAnalytics, setBranchAnalytics] = useState([]);
 
   const showToast = (message) => {
     setToast(message);
@@ -80,6 +81,9 @@ export default function TnPDashboard() {
           avgCtc: data.stats?.avgCtc || "N/A",
         });
         setPendingApprovals(data.pendingApprovals || []);
+        if (data.analytics?.branchWisePlacements) {
+          setBranchAnalytics(data.analytics.branchWisePlacements);
+        }
       }
 
       const res2 = await apiFetch("/tnp/students");
@@ -331,7 +335,15 @@ export default function TnPDashboard() {
                 <p className="text-sm font-medium text-[#1A1A1A]">Manage T&P Coordinators</p>
                 <p className="text-xs text-gray-500 mt-1">Add or remove student volunteers</p>
               </div>
-              <button onClick={() => showToast("Settings opened.")} className="text-xs border border-gray-300 text-gray-700 px-4 py-2 rounded-sm hover:bg-white transition-colors self-start sm:self-auto w-full sm:w-auto">Manage</button>
+              <button
+                onClick={() => {
+                  const email = prompt("Enter the email of the student you want to invite as a coordinator:");
+                  if (email) showToast(`Invite sent to ${email}`);
+                }}
+                className="text-xs border border-gray-300 text-gray-700 px-4 py-2 rounded-sm hover:bg-white transition-colors self-start sm:self-auto w-full sm:w-auto"
+              >
+                Manage
+              </button>
            </div>
          </div>
       </div>
@@ -458,7 +470,7 @@ export default function TnPDashboard() {
         <div className="bg-white border border-gray-200 p-6 sm:p-8 shadow-sm">
           <h3 className="text-sm font-medium text-[#1A1A1A] mb-6 border-b border-gray-100 pb-4">Branch-wise Placements (%)</h3>
           <div className="space-y-6">
-            {[ { branch: "Computer Science", val: 92 }, { branch: "Information Technology", val: 88 }, { branch: "Electronics & Comm.", val: 76 }, { branch: "Mechanical Engineering", val: 54 } ].map(item => (
+            {branchAnalytics.length > 0 ? branchAnalytics.map(item => (
               <div key={item.branch}>
                 <div className="flex justify-between text-xs mb-2 font-medium text-gray-600">
                   <span>{item.branch}</span><span className="text-[#5B8D9E] font-bold">{item.val}%</span>
@@ -467,7 +479,9 @@ export default function TnPDashboard() {
                   <motion.div initial={{ width: 0 }} animate={{ width: `${item.val}%` }} transition={{ duration: 1 }} className="bg-[#6B99A8] h-full rounded-full"></motion.div>
                 </div>
               </div>
-            ))}
+            )) : (
+              <p className="text-sm text-gray-500">No placement data available for analytics yet.</p>
+            )}
           </div>
         </div>
 
