@@ -33,3 +33,5 @@ frontend/yarn-error.log*
 
 # drizzle (only if purely generated and not migrations)
 backend/drizzle/
+
+.env.local
