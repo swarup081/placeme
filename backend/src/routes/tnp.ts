@@ -174,8 +174,7 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
             .select({
                 id: schema.jobs.id,
                 role: schema.jobs.title,
-                type: schema.jobs.description, // We packed type in description
-                ctc: schema.jobs.description,  // We packed ctc in description
+                description: schema.jobs.description,
                 branches: schema.jobs.branches,
                 company: schema.companies.name
             })
@@ -190,7 +189,7 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
             );
 
         const mappedApprovals = pendingApprovals.map(job => {
-            const desc = job.type || '';
+            const desc = job.description || '';
             const typeMatch = desc.match(/Type:\s*(.*)/);
             const ctcMatch = desc.match(/CTC:\s*(.*)/);
 
