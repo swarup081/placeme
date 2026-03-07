@@ -91,6 +91,24 @@ export default function CompanyDashboard() {
   const [stats, setStats] = useState({ activeJobs: 0, totalApplicants: 0, shortlisted: 0, interviewsScheduled: 0 });
   const [upcomingInterviews, setUpcomingInterviews] = useState([]);
   const [colleges, setColleges] = useState([]);
+  const [selectedBranches, setSelectedBranches] = useState([]);
+
+  const branchOptions = [
+    "Computer Science",
+    "Information Technology",
+    "Electronics & Comm.",
+    "Mechanical Engineering",
+    "Civil Engineering",
+    "Electrical Engineering"
+  ];
+
+  const handleBranchToggle = (branch) => {
+    setSelectedBranches(prev =>
+      prev.includes(branch)
+        ? prev.filter(b => b !== branch)
+        : [...prev, branch]
+    );
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -167,6 +185,7 @@ export default function CompanyDashboard() {
       location: formData.get("location"),
       ctc: formData.get("ctc"),
       collegeId: matchedCollege.id,
+      branches: selectedBranches.length > 0 ? selectedBranches : ["All Branches"],
     };
 
     try {
@@ -178,6 +197,7 @@ export default function CompanyDashboard() {
       if (res.ok) {
         showToast("Job successfully submitted for T&P Approval!");
         setActiveTab("overview");
+        setSelectedBranches([]);
         loadDashboardData();
       } else {
         const data = await res.json();
@@ -393,6 +413,23 @@ export default function CompanyDashboard() {
           <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Employment Type</label><select name="type" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white"><option>Full-Time</option><option>Internship</option></select></div>
           <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Location</label><input name="location" required type="text" placeholder="e.g. Remote, Bangalore" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
           <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">CTC / Stipend</label><input name="ctc" required type="text" placeholder="e.g. 24 LPA or 50k/month" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
+        </div>
+        <div>
+          <label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase tracking-wide">Eligible Branches</label>
+          <div className="flex flex-wrap gap-2">
+            {branchOptions.map(branch => (
+              <label key={branch} className={`cursor-pointer px-3 py-1.5 text-[12px] border rounded-sm transition-colors ${selectedBranches.includes(branch) ? 'bg-[#eef4f6] border-[#6B99A8] text-[#2C6E8F] font-medium' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}>
+                <input
+                  type="checkbox"
+                  className="hidden"
+                  checked={selectedBranches.includes(branch)}
+                  onChange={() => handleBranchToggle(branch)}
+                />
+                {branch}
+              </label>
+            ))}
+          </div>
+          <p className="text-[10px] text-gray-400 mt-1">Leave all unchecked to target all branches.</p>
         </div>
         <div>
           <label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase tracking-wide">Job Description</label>
