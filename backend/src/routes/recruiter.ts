@@ -491,6 +491,8 @@ router.post('/applications/:appId/status', async (req: Request, res: Response): 
             .select()
             .from(schema.applications)
             .innerJoin(schema.jobs, eq(schema.applications.jobId, schema.jobs.id))
+            .innerJoin(schema.students, eq(schema.applications.studentId, schema.students.id))
+            .innerJoin(schema.users, eq(schema.students.id, schema.users.id))
             .where(and(eq(schema.applications.id, appId as string), eq(schema.jobs.recruiterId, recruiterId)))
             .limit(1);
 
@@ -531,6 +533,50 @@ router.post('/applications/:appId/status', async (req: Request, res: Response): 
                     mode: meetingLink ? 'online' : 'offline',
                     meetingLink
                 });
+
+            // Format dates for Google Calendar (YYYYMMDDTHHMMSSZ assumes UTC, but let's use the local time from the string as a simpler format)
+            // A simple 1-hour duration for the calendar event
+            const endTime = new Date(scheduledAt.getTime() + 60 * 60 * 1000);
+
+            const formatDateForGCal = (date: Date) => {
+                return date.toISOString().replace(/-|:|\.\d\d\d/g, '');
+            };
+
+            const gcalDetails = encodeURIComponent(`Interview for ${app.jobs.title}`);
+            const gcalLocation = encodeURIComponent(meetingLink ? meetingLink : 'Offline');
+            const gcalLink = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`Interview: ${app.jobs.title}`)}&dates=${formatDateForGCal(scheduledAt)}/${formatDateForGCal(endTime)}&details=${gcalDetails}&location=${gcalLocation}`;
+
+            // Send Email
+            const subject = `Interview Scheduled: ${app.jobs.title}`;
+            const htmlMessage = `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
+                    <h2 style="color: #333;">Interview Scheduled</h2>
+                    <p style="color: #555; font-size: 16px;">Hi ${app.users.name || 'Student'},</p>
+                    <p style="color: #555; font-size: 16px;">Your interview for the position of <strong>${app.jobs.title}</strong> has been scheduled.</p>
+                    <p style="color: #555; font-size: 16px;"><strong>Date:</strong> ${interviewDate}</p>
+                    <p style="color: #555; font-size: 16px;"><strong>Time:</strong> ${interviewTime}</p>
+                    ${meetingLink ? `<p style="color: #555; font-size: 16px;"><strong>Meeting Link:</strong> <a href="${meetingLink}">${meetingLink}</a></p>` : ''}
+                    
+                    <div style="margin: 30px 0; text-align: center;">
+                        <a href="${gcalLink}" target="_blank" style="background-color: #4285F4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Add to Google Calendar</a>
+                    </div>
+                    <p style="color: #777; font-size: 14px;">Log in to your Placeme dashboard for more details.</p>
+                </div>
+            `;
+
+            try {
+                await sendEmail(app.users.email, subject, htmlMessage);
+            } catch (emailErr) {
+                console.error("Failed to send interview email notification", emailErr);
+                // Non-fatal, we still created the interview.
+            }
+
+            // Insert in-app notification
+            await db.insert(schema.notifications).values({
+                userId: app.users.id,
+                type: 'INTERVIEW_SCHEDULED',
+                message: `Your interview for ${app.jobs.title} is scheduled on ${interviewDate} at ${interviewTime}.`
+            });
         }
 
         res.json({ message: `Application status updated to ${status}` });
