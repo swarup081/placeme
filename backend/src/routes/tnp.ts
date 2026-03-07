@@ -263,12 +263,13 @@ router.get('/students', async (req: Request, res: Response): Promise<void> => {
 
         const students = await db
             .select({
-                id: schema.users.id, // we might want email/custom ID
+                id: schema.users.id,
+                email: schema.users.email,
                 name: schema.users.name,
                 branch: schema.students.branch,
                 cgpa: schema.students.cgpa,
                 status: schema.students.state,
-                company: schema.companies.name // To be accurate, needs a join with applications or a placements table
+                company: schema.companies.name
             })
             .from(schema.students)
             .innerJoin(schema.users, eq(schema.students.id, schema.users.id))
@@ -278,9 +279,10 @@ router.get('/students', async (req: Request, res: Response): Promise<void> => {
             .leftJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
             .where(eq(schema.students.collegeId, profile.collegeId));
 
-        const mappedStudents = students.map((s, index) => ({
-            id: `STD00${index + 1}`,
-            name: s.name || `Student ${index + 1}`,
+        const mappedStudents = students.map((s) => ({
+            id: s.id,
+            email: s.email,
+            name: s.name || `Unknown Student`,
             branch: s.branch || 'Unknown',
             cgpa: s.cgpa || 'N/A',
             status: s.status === 'PLACED' ? 'Placed' : 'Unplaced',
