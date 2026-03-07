@@ -4,17 +4,17 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/AuthContext";
 import { apiFetch } from "@/lib/api";
-import { 
-  LayoutDashboard, PlusCircle, Users, Bell, 
-  Search, CheckCircle2, ChevronRight, Star, 
+import {
+  LayoutDashboard, PlusCircle, Users, Bell,
+  Search, CheckCircle2, ChevronRight, Star,
   TrendingUp, Filter, MapPin, X, Calendar, Clock, Link as LinkIcon, FileText, Menu,
   Loader2, Building, Globe, LogOut, AlertCircle
 } from "lucide-react";
 
 export default function CompanyDashboard() {
   const { user, logout } = useAuth();
-  
-  const [activeTab, setActiveTab] = useState("overview"); 
+
+  const [activeTab, setActiveTab] = useState("overview");
   const [toast, setToast] = useState(null);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -87,45 +87,136 @@ export default function CompanyDashboard() {
     setIsMobileMenuOpen(false);
   };
 
-  const [applicants, setApplicants] = useState([
-    { id: 1, name: "Swarup Kumar", college: "National Institute of Technology", branch: "CSE", atsScore: 92, status: "Applied", date: "2 hrs ago", email: "swarup@nit.edu", phone: "+91 98765 43210" },
-    { id: 2, name: "Neha Gupta", college: "IIT Bombay", branch: "ECE", atsScore: 88, status: "Shortlisted", date: "1 day ago", email: "neha@iitb.ac.in", phone: "+91 91234 56789" },
-    { id: 3, name: "Rohan Das", college: "Delhi Technological University", branch: "IT", atsScore: 76, status: "Applied", date: "2 days ago", email: "rohan@dtu.ac.in", phone: "+91 99887 77665" },
-    { id: 4, name: "Aisha Singh", college: "National Institute of Technology", branch: "CSE", atsScore: 95, status: "Interview", date: "3 days ago", email: "aisha@nit.edu", phone: "+91 98765 11223", interviewDate: "2026-11-05", interviewTime: "10:00 AM" },
-  ]);
+  const [applicants, setApplicants] = useState([]);
+  const [stats, setStats] = useState({
+    activeJobs: 0,
+    totalApplicants: 0,
+    shortlisted: 0,
+    interviewsScheduled: 0
+  });
 
-  const stats = { 
-    activeJobs: 3, 
-    totalApplicants: applicants.length + 448, 
-    shortlisted: applicants.filter(a => a.status === "Shortlisted" || a.status === "Interview").length + 42, 
-    interviewsScheduled: applicants.filter(a => a.status === "Interview").length + 11 
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+
+  useEffect(() => {
+    if (!needsSetup && !setupLoading) {
+      loadDashboardData();
+    }
+  }, [needsSetup, setupLoading, activeTab]);
+
+  const loadDashboardData = async () => {
+    setDashboardLoading(true);
+    try {
+      const dbRes = await apiFetch("/recruiter/dashboard");
+      if (dbRes.ok) {
+        const dbData = await dbRes.json();
+        if (dbData.stats) setStats(dbData.stats);
+      }
+
+      const appRes = await apiFetch("/recruiter/applicants");
+      if (appRes.ok) {
+        const appData = await appRes.json();
+        // Backend returns applications array with flattened structure
+        if (appData.applicants) {
+          const formattedApplicants = appData.applicants.map(app => {
+            const dateStr = new Date(app.appliedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            return {
+              id: app.id,
+              name: app.studentName,
+              college: app.collegeName,
+              branch: app.studentBranch || 'N/A',
+              atsScore: Math.floor(Math.random() * 21) + 75, // Simulate ATS Score 75-95 as it's not in schema
+              status: app.state,
+              date: dateStr,
+              email: app.studentEmail,
+              phone: 'Not provided',
+              // Parse role from job title
+              role: app.jobTitle,
+              interviewDate: app.state === 'INTERVIEW_SCHEDULED' ? 'Scheduled' : null,
+              interviewTime: ''
+            };
+          });
+          setApplicants(formattedApplicants);
+        }
+      }
+    } catch {
+      showToast("Error loading dashboard data");
+    } finally {
+      setDashboardLoading(false);
+    }
   };
 
-  const upcomingInterviews = applicants.filter(a => a.status === "Interview");
+  const upcomingInterviews = applicants.filter(a => a.status === "INTERVIEW_SCHEDULED");
 
-  const handlePostJob = (e) => {
+  const handlePostJob = async (e) => {
     e.preventDefault();
-    showToast("Job successfully submitted for T&P Approval!");
-    setActiveTab("overview");
+    const formData = new FormData(e.target);
+    const title = formData.get("title");
+    const type = formData.get("type");
+    const location = formData.get("location");
+    const ctc = formData.get("ctc");
+    const description = formData.get("description");
+
+    try {
+      const res = await apiFetch("/recruiter/jobs", {
+        method: "POST",
+        body: JSON.stringify({ title, type, location, ctc, description })
+      });
+      if (res.ok) {
+        showToast("Job successfully submitted for T&P Approval!");
+        e.target.reset();
+        setActiveTab("overview");
+        loadDashboardData();
+      } else {
+        showToast("Failed to post job");
+      }
+    } catch {
+      showToast("Server error");
+    }
   };
 
-  const handleShortlist = (id, name) => {
-    setApplicants(applicants.map(app => app.id === id ? { ...app, status: "Shortlisted" } : app));
-    showToast(`${name} has been shortlisted!`);
+  const handleShortlist = async (id, name) => {
+    try {
+      const res = await apiFetch(`/recruiter/applications/${id}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status: "SHORTLISTED" })
+      });
+      if (res.ok) {
+        setApplicants(applicants.map(app => app.id === id ? { ...app, status: "SHORTLISTED" } : app));
+        showToast(`${name} has been shortlisted!`);
+      } else {
+        showToast("Failed to shortlist candidate");
+      }
+    } catch {
+      showToast("Server error");
+    }
   };
 
-  const handleScheduleInterview = (e) => {
+  const handleScheduleInterview = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const date = formData.get("date");
     const time = formData.get("time");
+    const link = formData.get("link");
 
-    setApplicants(applicants.map(app => 
-      app.id === selectedCandidate.id ? { ...app, status: "Interview", interviewDate: date, interviewTime: time } : app
-    ));
-    
-    showToast(`Interview scheduled with ${selectedCandidate.name} for ${date} at ${time}`);
-    setSelectedCandidate({ ...selectedCandidate, status: "Interview", interviewDate: date, interviewTime: time });
+    try {
+      const res = await apiFetch(`/recruiter/applications/${selectedCandidate.id}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status: "INTERVIEW_SCHEDULED", interviewDate: date, interviewTime: time, meetingLink: link })
+      });
+      if (res.ok) {
+        setApplicants(applicants.map(app =>
+          app.id === selectedCandidate.id ? { ...app, status: "INTERVIEW_SCHEDULED", interviewDate: date, interviewTime: time } : app
+        ));
+
+        showToast(`Interview scheduled with ${selectedCandidate.name} for ${date} at ${time}`);
+        setSelectedCandidate({ ...selectedCandidate, status: "INTERVIEW_SCHEDULED", interviewDate: date, interviewTime: time });
+        loadDashboardData();
+      } else {
+        showToast("Failed to schedule interview");
+      }
+    } catch {
+      showToast("Server error");
+    }
   };
 
   const renderOverview = () => (
@@ -172,8 +263,8 @@ export default function CompanyDashboard() {
                   <span className="shrink-0 text-[9px] sm:text-[10px] bg-white border border-gray-200 px-2 py-1 text-gray-600 rounded">Video Call</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-[11px] sm:text-[12px] text-gray-600 font-medium">
-                  <span className="flex items-center gap-1.5"><Calendar size={12} className="text-[#6B99A8] sm:w-[14px] sm:h-[14px]"/> {interview.interviewDate}</span>
-                  <span className="flex items-center gap-1.5"><Clock size={12} className="text-[#6B99A8] sm:w-[14px] sm:h-[14px]"/> {interview.interviewTime}</span>
+                  <span className="flex items-center gap-1.5"><Calendar size={12} className="text-[#6B99A8] sm:w-[14px] sm:h-[14px]" /> {interview.interviewDate}</span>
+                  <span className="flex items-center gap-1.5"><Clock size={12} className="text-[#6B99A8] sm:w-[14px] sm:h-[14px]" /> {interview.interviewTime}</span>
                 </div>
               </div>
             ))}
@@ -213,11 +304,11 @@ export default function CompanyDashboard() {
                 <td className="p-2 sm:p-4 overflow-hidden">
                   <p className="text-[11px] sm:text-[13px] font-semibold text-[#1A1A1A] truncate">{cand.name}</p>
                   <p className="text-[9px] sm:text-[11px] text-gray-500 mt-0.5 truncate">Applied {cand.date}</p>
-                  
+
                   {/* Show mobile-only badge for status since column is hidden */}
                   <div className="mt-1.5 md:hidden">
-                    <span className={`text-[8px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded border inline-block ${cand.status === 'Interview' ? 'bg-blue-50 text-blue-700 border-blue-200' : cand.status === 'Shortlisted' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                      {cand.status}
+                    <span className={`text-[8px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded border inline-block ${cand.status === 'INTERVIEW_SCHEDULED' ? 'bg-blue-50 text-blue-700 border-blue-200' : cand.status === 'SHORTLISTED' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                      {cand.status.replace('_', ' ')}
                     </span>
                   </div>
                 </td>
@@ -231,14 +322,14 @@ export default function CompanyDashboard() {
                   </span>
                 </td>
                 <td className="p-4 hidden md:table-cell">
-                  <span className={`text-[11px] font-medium uppercase tracking-wider px-2 py-1 rounded border ${cand.status === 'Interview' ? 'bg-blue-50 text-blue-700 border-blue-200' : cand.status === 'Shortlisted' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                    {cand.status}
+                  <span className={`text-[11px] font-medium uppercase tracking-wider px-2 py-1 rounded border ${cand.status === 'INTERVIEW_SCHEDULED' ? 'bg-blue-50 text-blue-700 border-blue-200' : cand.status === 'SHORTLISTED' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                    {cand.status.replace('_', ' ')}
                   </span>
                 </td>
                 <td className="p-2 sm:p-4">
                   <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
                     <button onClick={() => setSelectedCandidate(cand)} className="text-[9px] sm:text-[11px] border border-[#6B99A8] text-[#5B8D9E] px-1 sm:px-3 py-1.5 hover:bg-[#6B99A8] hover:text-white transition-colors rounded-sm w-full text-center">View</button>
-                    {cand.status === "Applied" && (
+                    {cand.status === "APPLIED" && (
                       <button onClick={() => handleShortlist(cand.id, cand.name)} className="text-[9px] sm:text-[11px] bg-[#1A1A1A] text-white px-1 sm:px-3 py-1.5 hover:bg-black transition-colors rounded-sm w-full text-center">Shortlist</button>
                     )}
                   </div>
@@ -260,14 +351,14 @@ export default function CompanyDashboard() {
 
       <form onSubmit={handlePostJob} className="bg-white border border-gray-200 p-5 sm:p-8 space-y-5 sm:space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
-          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Job Title</label><input required type="text" placeholder="e.g. Software Engineer Intern" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
-          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Employment Type</label><select className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white"><option>Full-Time</option><option>Internship</option></select></div>
-          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Location</label><input required type="text" placeholder="e.g. Remote, Bangalore" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
-          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">CTC / Stipend</label><input required type="text" placeholder="e.g. 24 LPA or 50k/month" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
+          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Job Title</label><input name="title" required type="text" placeholder="e.g. Software Engineer Intern" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
+          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Employment Type</label><select name="type" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white"><option>Full-Time</option><option>Internship</option></select></div>
+          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Location</label><input name="location" required type="text" placeholder="e.g. Remote, Bangalore" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
+          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">CTC / Stipend</label><input name="ctc" required type="text" placeholder="e.g. 24 LPA or 50k/month" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
         </div>
         <div>
           <label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase tracking-wide">Job Description</label>
-          <textarea required rows={5} placeholder="Describe the responsibilities and requirements..." className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm resize-none"></textarea>
+          <textarea name="description" required rows={5} placeholder="Describe the responsibilities and requirements..." className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm resize-none"></textarea>
         </div>
         <div className="pt-2 sm:pt-4 flex justify-end">
           <button type="submit" className="w-full sm:w-auto bg-[#1A1A1A] text-white px-6 sm:px-8 py-2.5 sm:py-3 text-[12px] sm:text-[13px] font-medium rounded-sm hover:bg-black transition-colors">Submit for Campus Approval</button>
@@ -371,23 +462,23 @@ export default function CompanyDashboard() {
         {selectedCandidate && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedCandidate(null)} className="fixed inset-0 z-[150] bg-[#1A1A1A]/40 backdrop-blur-sm flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={(e) => e.stopPropagation()} className="bg-white border border-gray-200 shadow-2xl max-w-2xl w-full flex flex-col md:flex-row overflow-y-auto max-h-[90vh] rounded-sm">
-              
+
               {/* Left: Profile Info */}
               <div className="w-full md:w-1/2 p-6 sm:p-8 border-b md:border-b-0 md:border-r border-gray-100 bg-gray-50/30 relative">
-                <button onClick={() => setSelectedCandidate(null)} className="md:hidden absolute top-4 right-4 text-gray-400 hover:text-black"><X size={20}/></button>
+                <button onClick={() => setSelectedCandidate(null)} className="md:hidden absolute top-4 right-4 text-gray-400 hover:text-black"><X size={20} /></button>
                 <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-[#6B99A8] to-[#92b5c1] flex items-center justify-center text-white text-xl sm:text-2xl font-light tracking-wider mb-4 shadow-sm">
                   {selectedCandidate.name.split(" ").map((n) => n[0]).join("")}
                 </div>
                 <h3 className="text-xl sm:text-2xl font-medium text-[#1A1A1A] mb-1 pr-6">{selectedCandidate.name}</h3>
                 <p className="text-[12px] sm:text-[13px] text-gray-500 mb-5 sm:mb-6">{selectedCandidate.college} • {selectedCandidate.branch}</p>
-                
+
                 <div className="space-y-3 sm:space-y-4 text-[12px] sm:text-[13px]">
                   <div><p className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold mb-0.5 sm:mb-1">Email</p><p className="text-gray-800 font-medium break-all">{selectedCandidate.email}</p></div>
                   <div><p className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold mb-0.5 sm:mb-1">Phone</p><p className="text-gray-800 font-medium">{selectedCandidate.phone}</p></div>
                   <div><p className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold mb-0.5 sm:mb-1">ATS Match Score</p><p className="text-green-600 font-bold text-base sm:text-lg">{selectedCandidate.atsScore}%</p></div>
                 </div>
                 <button className="mt-6 sm:mt-8 w-full flex items-center justify-center gap-2 border border-gray-300 text-gray-700 py-2 sm:py-2.5 text-[13px] sm:text-sm hover:bg-white transition-colors rounded-sm">
-                  <FileText size={16}/> View Full Resume
+                  <FileText size={16} /> View Full Resume
                 </button>
               </div>
 
@@ -395,15 +486,15 @@ export default function CompanyDashboard() {
               <div className="w-full md:w-1/2 p-6 sm:p-8 relative">
                 <button onClick={() => setSelectedCandidate(null)} className="hidden md:block absolute top-6 right-6 text-gray-400 hover:text-black transition-colors"><X size={20} /></button>
                 <h4 className="text-[14px] sm:text-[15px] font-medium text-[#1A1A1A] mb-5 sm:mb-6 border-b border-gray-100 pb-3 sm:pb-4">Take Action</h4>
-                
-                {selectedCandidate.status === "Applied" ? (
+
+                {selectedCandidate.status === "APPLIED" ? (
                   <div className="text-center py-6 sm:py-10">
                     <p className="text-[13px] sm:text-sm text-gray-500 mb-5 sm:mb-6">Candidate looks good? Shortlist them to unlock interview scheduling.</p>
                     <button onClick={() => handleShortlist(selectedCandidate.id, selectedCandidate.name)} className="w-full sm:w-auto bg-[#1A1A1A] text-white px-6 py-2.5 text-[13px] sm:text-sm hover:bg-black transition-colors rounded-sm">
                       Shortlist Candidate
                     </button>
                   </div>
-                ) : selectedCandidate.status === "Interview" ? (
+                ) : selectedCandidate.status === "INTERVIEW_SCHEDULED" || selectedCandidate.status === "INTERVIEWED" || selectedCandidate.status === "HR_ROUND" || selectedCandidate.status === "OFFERED" || selectedCandidate.status === "ACCEPTED" ? (
                   <div className="bg-green-50 border border-green-200 p-5 sm:p-6 rounded-sm text-center">
                     <CheckCircle2 size={32} className="text-green-600 mx-auto mb-2 sm:mb-3" />
                     <p className="text-[13px] sm:text-sm font-medium text-green-800 mb-1">Interview Scheduled!</p>
@@ -459,12 +550,12 @@ export default function CompanyDashboard() {
       <AnimatePresence>
         {isMobileMenuOpen && (
           <>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setIsMobileMenuOpen(false)}
               className="fixed inset-0 bg-black/50 z-40 md:hidden"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ type: "tween", duration: 0.3 }}
               className="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200 flex flex-col z-50 md:hidden"
             >

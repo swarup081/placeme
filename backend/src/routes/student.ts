@@ -610,20 +610,32 @@ router.get('/applications', authenticate, requireRole('STUDENT'), async (req: Re
         const apps = await db
             .select({
                 id: schema.applications.id,
+                jobId: schema.applications.jobId,
                 state: schema.applications.state,
                 appliedAt: schema.applications.appliedAt,
                 jobTitle: schema.jobs.title,
                 jobLocation: schema.jobs.location,
                 companyName: schema.companies.name,
+                isTnpPosted: schema.jobs.postedByTnpId
             })
             .from(schema.applications)
             .innerJoin(schema.jobs, eq(schema.applications.jobId, schema.jobs.id))
-            .innerJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
-            .innerJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
+            .leftJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
+            .leftJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
             .where(eq(schema.applications.studentId, studentId))
             .orderBy(desc(schema.applications.appliedAt));
 
-        res.json({ applications: apps });
+        const formattedApps = apps.map(app => ({
+            id: app.id,
+            jobId: app.jobId,
+            state: app.state,
+            appliedAt: app.appliedAt,
+            jobTitle: app.jobTitle,
+            jobLocation: app.jobLocation || 'Remote',
+            companyName: app.companyName || 'T&P Cell'
+        }));
+
+        res.json({ applications: formattedApps });
     } catch (err) {
         console.error('Fetch applications error:', err);
         res.status(500).json({ error: 'Internal server error' });
