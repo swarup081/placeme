@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import {
-  GraduationCap, Building2, Briefcase, ArrowLeft, 
-  X, Loader2, Mail, Lock, User, AlertCircle,
+  GraduationCap, Building2, Briefcase, ArrowLeft,
+  X, Loader2, Mail, Lock, User, CheckCircle2, AlertCircle,
   KeyRound
 } from "lucide-react";
 
@@ -29,8 +29,6 @@ export default function AuthDrawer({ isOpen, onClose }) {
   const [cgpa, setCgpa] = useState("");
   const [branch, setBranch] = useState("");
 
-  const [orgName, setOrgName] = useState("");
-
   // Re-use for OTP
   const [otp, setOtp] = useState("");
 
@@ -46,7 +44,6 @@ export default function AuthDrawer({ isOpen, onClose }) {
     setName("");
     setCgpa("");
     setBranch("");
-    setOrgName("");
     setOtp("");
   };
 
@@ -60,14 +57,16 @@ export default function AuthDrawer({ isOpen, onClose }) {
     setStep(2);
   };
 
+  // ── ROUTING BASED ON ROLE ───────────────────────────────
   const routeToDashboard = (role) => {
     if (role === "STUDENT") router.push("/dashboard/student");
-    else if (role === "RECRUITER") router.push("/dashboard/recruiter");
+    else if (role === "RECRUITER") router.push("/dashboard/company");
     else if (role === "TNP") router.push("/dashboard/tnp");
-    else if (role === "ADMIN") router.push("/dashboard/admin");
+    else if (role === "ADMIN") router.push("/dashboard/tnp"); // Fallback
     else router.push("/");
   };
 
+  // ── LOGIN ──────────────────────────────────────────────
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
@@ -81,8 +80,10 @@ export default function AuthDrawer({ isOpen, onClose }) {
 
       if (signInError) throw signInError;
 
+      // Ensure AuthContext picks it up
       await refreshUser();
 
+      // Fetch profile to know the role
       const { data: profileData } = await supabase
         .from("profiles")
         .select("role")
@@ -100,6 +101,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
     }
   };
 
+  // ── NEXT STEP ──────────────────────────────────────────
   const handleNextStep = async (e) => {
     e.preventDefault();
     if (authMode === "login") {
@@ -107,14 +109,10 @@ export default function AuthDrawer({ isOpen, onClose }) {
       return;
     }
 
-    if (step === 2) {
-      if (selectedRole === "student" && (!name || !email || !password || !cgpa || !branch)) {
+    if (step === 2 && selectedRole === "student") {
+      if (!name || !email || !password || !cgpa || !branch) {
         setError("Please fill all fields.");
         return;
-      }
-      if (selectedRole !== "student" && (!name || !email || !password || !orgName)) {
-         setError("Please fill all fields.");
-         return;
       }
       await handleSendOtp();
     } else if (step === 3) {
@@ -122,46 +120,41 @@ export default function AuthDrawer({ isOpen, onClose }) {
     }
   };
 
+  // ── STUDENT REGISTER: SignUp (which sends confirmation) ─
   const handleSendOtp = async () => {
     setError("");
     setIsLoading(true);
 
     try {
-      const roleStr = selectedRole === "company" ? "RECRUITER" : selectedRole === "tnp" ? "TNP" : "STUDENT";
-
+      // For Supabase, signUp with email/password handles verification implicitly if enabled.
+      // But we will pass user_metadata so the trigger can create the profile properly!
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             name: name,
-            role: roleStr
+            role: "STUDENT"
           }
         }
       });
 
       if (signUpError) throw signUpError;
 
+      // If email confirmation is enabled, they need OTP.
+      // If auto-confirm is on in local dev, this might just log them in directly.
       if (data?.session) {
-        // Auto-confirmed logic
-        if (roleStr === "STUDENT") {
-          await supabase.from("profiles").update({
-            cgpa: parseFloat(cgpa) || null,
-            branch: branch
-          }).eq("id", data.user.id);
-        } else if (roleStr === "RECRUITER") {
-           // Insert into companies then link
-           const { data: comp } = await supabase.from("companies").insert({ name: orgName }).select().single();
-           if (comp) await supabase.from("profiles").update({ company_id: comp.id }).eq("id", data.user.id);
-        } else if (roleStr === "TNP") {
-           const { data: coll } = await supabase.from("colleges").insert({ name: orgName }).select().single();
-           if (coll) await supabase.from("profiles").update({ college_id: coll.id }).eq("id", data.user.id);
-        }
+        // Auto-confirmed! Update the profile with extra fields
+        await supabase.from("profiles").update({
+          cgpa: parseFloat(cgpa) || null,
+          branch: branch
+        }).eq("id", data.user.id);
 
         await refreshUser();
         handleClose();
-        routeToDashboard(roleStr);
+        routeToDashboard("STUDENT");
       } else {
+        // Requires OTP verification
         setStep(3);
       }
     } catch (err) {
@@ -171,6 +164,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
     }
   };
 
+  // ── STUDENT REGISTER: verify-otp ───────────────────────
   const handleVerifyOtp = async (e) => {
     e?.preventDefault();
     setError("");
@@ -187,18 +181,12 @@ export default function AuthDrawer({ isOpen, onClose }) {
 
       if (verifyError) throw verifyError;
 
-      const roleStr = selectedRole === "company" ? "RECRUITER" : selectedRole === "tnp" ? "TNP" : "STUDENT";
-
+      // Update custom profile fields
       if (data?.user) {
-         if (roleStr === "STUDENT") {
-            await supabase.from("profiles").update({ cgpa: parseFloat(cgpa) || null, branch: branch }).eq("id", data.user.id);
-         } else if (roleStr === "RECRUITER") {
-            const { data: comp } = await supabase.from("companies").insert({ name: orgName }).select().single();
-            if (comp) await supabase.from("profiles").update({ company_id: comp.id }).eq("id", data.user.id);
-         } else if (roleStr === "TNP") {
-            const { data: coll } = await supabase.from("colleges").insert({ name: orgName }).select().single();
-            if (coll) await supabase.from("profiles").update({ college_id: coll.id }).eq("id", data.user.id);
-         }
+         await supabase.from("profiles").update({
+            cgpa: parseFloat(cgpa) || null,
+            branch: branch
+         }).eq("id", data.user.id);
       }
 
       await refreshUser();
@@ -206,18 +194,19 @@ export default function AuthDrawer({ isOpen, onClose }) {
       setLoadingText("Setting up your dashboard...");
       setTimeout(() => {
         handleClose();
-        routeToDashboard(roleStr);
+        routeToDashboard("STUDENT");
       }, 1000);
 
     } catch (err) {
       setError(err.message || "Invalid or expired code.");
-      setStep(3);
+      setStep(3); // Go back to OTP input
     } finally {
       setIsLoading(false);
     }
   };
 
 
+  // ── RENDER: Role Selection ─────────────────────────────
   const renderRoleSelection = () => (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <p className="text-sm text-gray-500 mb-6">Select how you want to use the platform</p>
@@ -244,13 +233,14 @@ export default function AuthDrawer({ isOpen, onClose }) {
     </div>
   );
 
+  // ── RENDER: Login Form ─────────────────────────────────
   const renderLoginForm = () => (
     <form onSubmit={handleNextStep} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-4">
         <p className="text-sm text-gray-500 capitalize">Sign in as {selectedRole || "Student"}</p>
         <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-sm border border-gray-100">
           <span className="flex w-1.5 h-1.5 rounded-full bg-green-500"></span>
-          <span className="text-[10px] text-gray-500 uppercase font-medium tracking-wider">Operational</span>
+          <span className="text-[10px] text-gray-500 uppercase font-medium tracking-wider">System Operational</span>
         </div>
       </div>
 
@@ -272,6 +262,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
       <div>
         <div className="flex justify-between items-center mb-1.5">
           <label className="block text-xs font-medium text-gray-600">Password</label>
+          <button type="button" className="text-xs text-[#2C6E8F] hover:underline">Forgot password?</button>
         </div>
         <div className="relative">
           <Lock className="absolute left-3 top-3 text-gray-400" size={16} />
@@ -300,16 +291,19 @@ export default function AuthDrawer({ isOpen, onClose }) {
         {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Sign In"}
       </button>
 
-      <p className="text-center text-xs text-gray-400 mt-3">
-        Don&apos;t have an account?{" "}
-        <button type="button" onClick={() => { setAuthMode("register"); setStep(2); setError(""); }} className="text-[#2C6E8F] hover:underline font-medium">Register</button>
-      </p>
+      {selectedRole === "student" && (
+        <p className="text-center text-xs text-gray-400 mt-3">
+          Don&apos;t have an account?{" "}
+          <button type="button" onClick={() => { setAuthMode("register"); setStep(2); setError(""); }} className="text-[#2C6E8F] hover:underline font-medium">Register</button>
+        </p>
+      )}
     </form>
   );
 
-  const renderRegistration = () => (
+  // ── RENDER: Student Registration (Basic Info + Email) ──
+  const renderStudentRegistration = () => (
     <form onSubmit={handleNextStep} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <p className="text-sm text-gray-500 mb-4 capitalize">Create your {selectedRole} account</p>
+      <p className="text-sm text-gray-500 mb-4">Create your student account</p>
 
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1.5">Full Name</label>
@@ -325,37 +319,36 @@ export default function AuthDrawer({ isOpen, onClose }) {
         </div>
       </div>
 
-      {selectedRole === "student" && (
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">CGPA</label>
-            <input required type="number" step="0.01" min="0" max="10" value={cgpa} onChange={(e) => setCgpa(e.target.value)} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="e.g. 8.5" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">Branch</label>
-            <input required type="text" value={branch} onChange={(e) => setBranch(e.target.value)} className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all" placeholder="e.g. CSE" />
-          </div>
-        </div>
-      )}
-
-      {selectedRole !== "student" && (
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">{selectedRole === "company" ? "Company Name" : "College Name"}</label>
-          <div className="relative">
-            <Building2 className="absolute left-3 top-3 text-gray-400" size={16} />
-            <input
-              required
-              value={orgName}
-              onChange={(e) => setOrgName(e.target.value)}
-              className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
-              placeholder={selectedRole === "company" ? "Tech Corp" : "NIT College"}
-            />
-          </div>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">CGPA</label>
+          <input
+            required
+            type="number"
+            step="0.01"
+            min="0"
+            max="10"
+            value={cgpa}
+            onChange={(e) => setCgpa(e.target.value)}
+            className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+            placeholder="e.g. 8.5"
+          />
         </div>
-      )}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">Branch</label>
+          <input
+            required
+            type="text"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            className="w-full border border-gray-300 p-3 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
+            placeholder="e.g. CSE"
+          />
+        </div>
+      </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1.5">Email Address</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1.5">College Email</label>
         <div className="relative">
           <Mail className="absolute left-3 top-3 text-gray-400" size={16} />
           <input
@@ -364,9 +357,10 @@ export default function AuthDrawer({ isOpen, onClose }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full border border-gray-300 p-3 pl-10 text-sm focus:outline-none focus:border-[#2C6E8F] focus:ring-1 focus:ring-[#2C6E8F]/20 transition-all"
-            placeholder="you@example.com"
+            placeholder="you@college.edu"
           />
         </div>
+        <p className="text-[11px] text-gray-400 mt-1.5">Use your official college email address</p>
       </div>
 
       <div>
@@ -395,7 +389,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
         disabled={isLoading}
         className="w-full bg-[#1A1A1A] text-white p-3 text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
       >
-        {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Sign Up"}
+        {isLoading ? <Loader2 size={16} className="animate-spin" /> : "Verify Email"}
       </button>
 
       <p className="text-center text-xs text-gray-400 mt-3">
@@ -405,6 +399,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
     </form>
   );
 
+  // ── RENDER: OTP Verification ───────────────────────────
   const renderOtpStep = () => (
     <form onSubmit={handleNextStep} className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="text-center mb-4">
@@ -450,6 +445,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
     </form>
   );
 
+  // ── RENDER: Loading State ──────────────────────────────
   const renderLoadingState = () => (
     <div className="flex flex-col items-center justify-center py-16 animate-in fade-in duration-500">
       <Loader2 size={36} className="text-[#2C6E8F] animate-spin mb-4" />
@@ -457,14 +453,19 @@ export default function AuthDrawer({ isOpen, onClose }) {
     </div>
   );
 
+  // ── Determine which content to show ────────────────────
   const renderContent = () => {
     if (step === "loading") return renderLoadingState();
+
     if (step === 1) return renderRoleSelection();
+
     if (authMode === "login" && step === 2) return renderLoginForm();
+
     if (authMode === "register") {
-      if (step === 2) return renderRegistration();
+      if (step === 2) return renderStudentRegistration();
       if (step === 3) return renderOtpStep();
     }
+
     return renderLoginForm();
   };
 
@@ -480,6 +481,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
     <AnimatePresence>
       {isOpen && (
         <>
+          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -488,6 +490,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
             className="fixed inset-0 bg-black/50 z-[100]"
           />
 
+          {/* Drawer */}
           <motion.div
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
@@ -495,6 +498,7 @@ export default function AuthDrawer({ isOpen, onClose }) {
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
             className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-[101] flex flex-col border-l border-[#2C6E8F]/20"
           >
+            {/* Header */}
             <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {step !== 1 && step !== "loading" && (
@@ -521,10 +525,12 @@ export default function AuthDrawer({ isOpen, onClose }) {
               </button>
             </div>
 
+            {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {renderContent()}
             </div>
 
+            {/* Footer */}
             <div className="px-6 py-4 border-t border-gray-100 text-center">
               <p className="text-[11px] text-gray-400">
                 By continuing, you agree to PlaceMe&apos;s Terms of Service
