@@ -174,14 +174,13 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
             .select({
                 id: schema.jobs.id,
                 role: schema.jobs.title,
-                type: schema.jobs.description, // We packed type in description
-                ctc: schema.jobs.description,  // We packed ctc in description
+                description: schema.jobs.description,
                 branches: schema.jobs.branches,
                 company: schema.companies.name
             })
             .from(schema.jobs)
-            .innerJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
-            .innerJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
+            .leftJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
+            .leftJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
             .where(
                 and(
                     eq(schema.jobs.state, 'SUBMITTED'),
@@ -190,7 +189,7 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
             );
 
         const mappedApprovals = pendingApprovals.map(job => {
-            const desc = job.type || '';
+            const desc = job.description || '';
             const typeMatch = desc.match(/Type:\s*(.*)/);
             const ctcMatch = desc.match(/CTC:\s*(.*)/);
 
@@ -204,7 +203,41 @@ router.get('/dashboard', async (req: Request, res: Response): Promise<void> => {
             }
         });
 
-        res.json({ stats, pendingApprovals: mappedApprovals });
+        // Placement Analytics Data (Branch-wise, YoY, CTC distribution)
+        // These would normally be complex aggregations, but we can compute them here
+        const placements = await db
+            .select({
+                branch: schema.students.branch,
+                cgpa: schema.students.cgpa,
+            })
+            .from(schema.students)
+            .where(
+                and(
+                    eq(schema.students.collegeId, profile.collegeId),
+                    eq(schema.students.state, 'PLACED')
+                )
+            );
+
+        const branchStats: Record<string, number> = {};
+        placements.forEach(p => {
+            if (p.branch) {
+                branchStats[p.branch] = (branchStats[p.branch] || 0) + 1;
+            }
+        });
+
+        // Convert to percentage array
+        const branchWisePlacements = Object.entries(branchStats).map(([branch, count]) => ({
+            branch,
+            val: Math.round((count / Math.max(stats.totalStudents, 1)) * 100)
+        }));
+
+        res.json({
+            stats,
+            pendingApprovals: mappedApprovals,
+            analytics: {
+                branchWisePlacements
+            }
+        });
     } catch (err) {
         console.error('TNP Dashboard error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -230,12 +263,13 @@ router.get('/students', async (req: Request, res: Response): Promise<void> => {
 
         const students = await db
             .select({
-                id: schema.users.id, // we might want email/custom ID
+                id: schema.users.id,
+                email: schema.users.email,
                 name: schema.users.name,
                 branch: schema.students.branch,
                 cgpa: schema.students.cgpa,
                 status: schema.students.state,
-                company: schema.companies.name // To be accurate, needs a join with applications or a placements table
+                company: schema.companies.name
             })
             .from(schema.students)
             .innerJoin(schema.users, eq(schema.students.id, schema.users.id))
@@ -245,9 +279,10 @@ router.get('/students', async (req: Request, res: Response): Promise<void> => {
             .leftJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
             .where(eq(schema.students.collegeId, profile.collegeId));
 
-        const mappedStudents = students.map((s, index) => ({
-            id: `STD00${index + 1}`,
-            name: s.name || `Student ${index + 1}`,
+        const mappedStudents = students.map((s) => ({
+            id: s.id,
+            email: s.email,
+            name: s.name || `Unknown Student`,
             branch: s.branch || 'Unknown',
             cgpa: s.cgpa || 'N/A',
             status: s.status === 'PLACED' ? 'Placed' : 'Unplaced',
@@ -615,6 +650,56 @@ router.post('/students/:studentId/reject', async (req: Request, res: Response): 
         res.json({ message: 'Student rejected' });
     } catch (err) {
         console.error('Reject student error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * POST /tnp/broadcast
+ * Broadcasts a message to all students in the T&P's college.
+ */
+router.post('/broadcast', async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { message, type } = req.body;
+
+        if (!message) {
+            res.status(400).json({ error: 'Message is required' });
+            return;
+        }
+
+        const [profile] = await db
+            .select()
+            .from(schema.tnpProfiles)
+            .where(eq(schema.tnpProfiles.id, req.user!.id))
+            .limit(1);
+
+        if (!profile || !profile.collegeId) {
+            res.status(400).json({ error: 'College not configured yet' });
+            return;
+        }
+
+        const collegeStudents = await db
+            .select({ id: schema.students.id })
+            .from(schema.students)
+            .where(eq(schema.students.collegeId, profile.collegeId));
+
+        if (collegeStudents.length === 0) {
+            res.json({ message: 'No students to broadcast to.' });
+            return;
+        }
+
+        const notificationsData = collegeStudents.map(student => ({
+            userId: student.id,
+            type: type || 'broadcast',
+            message: message,
+            read: false
+        }));
+
+        await db.insert(schema.notifications).values(notificationsData);
+
+        res.json({ message: `Broadcast sent successfully to ${collegeStudents.length} students` });
+    } catch (err) {
+        console.error('Broadcast error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

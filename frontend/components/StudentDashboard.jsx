@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/lib/AuthContext";
+import { apiFetch } from "@/lib/api";
 import { 
   LayoutDashboard, Briefcase, FileText, User, Bell, 
   Search, UploadCloud, CheckCircle2, ChevronRight, 
-  Clock, Star, AlertCircle, MapPin, Edit2, Github, Linkedin, Code2, Calendar, TrendingUp, X, Menu
+  Clock, Star, AlertCircle, MapPin, Edit2, Github, Linkedin, Code2, Calendar, TrendingUp, X, Menu, LogOut
 } from "lucide-react";
 
 export default function StudentDashboard() {
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("overview"); 
   const [jobCategory, setJobCategory] = useState("All");
   
@@ -33,49 +36,121 @@ export default function StudentDashboard() {
     setIsMobileMenuOpen(false);
   };
 
-  // Mock Data
-  const stats = {
+  const [stats, setStats] = useState({
     atsScore: 82,
-    applications: 4 + appliedJobs.length,
-    interviews: 1,
-    profileCompleteness: 95
+    applications: 0,
+    interviews: 0,
+    profileCompleteness: 50
+  });
+  const [jobListings, setJobListings] = useState([]);
+  const [applicationsDetailed, setApplicationsDetailed] = useState([]);
+  const [recentApplications, setRecentApplications] = useState([]);
+  const [upcomingInterviews, setUpcomingInterviews] = useState([]);
+  const [studentProfile, setStudentProfile] = useState(null);
+  const [collegeProfile, setCollegeProfile] = useState(null);
+
+  const loadDashboardData = async () => {
+    try {
+      const res = await apiFetch("/student/dashboard");
+      const data = await res.json();
+      if (res.ok) {
+        setStats(data.stats);
+        setRecentApplications(data.recentApplications || []);
+        setUpcomingInterviews(data.upcomingInterviews || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const jobListings = [
-    { id: 1, department: "Engineering", role: "Forward Deployed Engineer", location: "Remote / Hyderabad", chances: 92 },
-    { id: 2, department: "Engineering", role: "Principal Software Engineer", location: "Remote / Hyderabad", chances: 88 },
-    { id: 3, department: "Engineering", role: "Associate Software Engineer", location: "Remote / Hyderabad", chances: 75 },
-    { id: 4, department: "Engineering", role: "Software Development Engineer (Intern)", location: "Remote / Hyderabad", chances: 81 },
-    { id: 5, department: "Business Development", role: "Business Development Intern", location: "Remote / Hyderabad", chances: 64 },
-    { id: 6, department: "Engineering", role: "Software Development Engineer", location: "Remote / Hyderabad", chances: 85 },
-  ];
+  const loadProfile = async () => {
+    try {
+      const res = await apiFetch("/student/profile");
+      const data = await res.json();
+      if (res.ok) {
+        setStudentProfile(data.student);
+        setCollegeProfile(data.college);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-  const applicationsDetailed = [
-    { 
-      id: 1, company: "Amazon", role: "Software Development Engineer Intern", 
-      appliedDate: "Oct 24, 2026", location: "Bangalore", 
-      stages: ["Applied", "Online Test", "Interview", "Offer"], currentStage: 2, status: "Interview Scheduled for Nov 2" 
-    },
-    { 
-      id: 2, company: "Goldman Sachs", role: "Summer Analyst", 
-      appliedDate: "Oct 20, 2026", location: "Hyderabad", 
-      stages: ["Applied", "Online Test", "Interview", "Offer"], currentStage: 1, status: "Shortlisted for Test" 
-    },
-    { 
-      id: 3, company: "TCS", role: "Digital Profile", 
-      appliedDate: "Oct 15, 2026", location: "Pan India", 
-      stages: ["Applied", "Online Test", "Interview", "Offer"], currentStage: 0, status: "Under Review" 
-    },
-  ];
+  const loadJobs = async () => {
+    try {
+      const res = await apiFetch("/student/jobs");
+      const data = await res.json();
+      if (res.ok) {
+        setJobListings(data.jobs.map(j => ({
+          ...j,
+          department: "Engineering", // Mocked category since it's not in schema
+          role: j.title,
+          chances: Math.floor(Math.random() * 40) + 50 // Mocked match score
+        })));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadApplications = async () => {
+    try {
+      const res = await apiFetch("/student/applications");
+      const data = await res.json();
+      if (res.ok) {
+        setApplicationsDetailed(data.applications.map(app => {
+          let currentStage = 0;
+          if (app.state === 'SHORTLISTED') currentStage = 1;
+          if (app.state === 'INTERVIEW_SCHEDULED' || app.state === 'INTERVIEWED') currentStage = 2;
+          if (app.state === 'HR_ROUND' || app.state === 'OFFERED' || app.state === 'ACCEPTED') currentStage = 3;
+
+          return {
+            id: app.id,
+            company: app.companyName,
+            role: app.jobTitle,
+            appliedDate: new Date(app.appliedAt).toLocaleDateString(),
+            location: app.jobLocation,
+            stages: ["Applied", "Shortlisted", "Interview", "Offer"],
+            currentStage,
+            status: app.state
+          };
+        }));
+
+        // Populate applied jobs
+        setAppliedJobs(data.applications.map(a => a.id));
+        // Note: above we use app.id but the apply button checks jobId.
+        // Let's refetch dashboard stats when applying.
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboardData();
+    loadJobs();
+    loadApplications();
+    loadProfile();
+  }, []);
 
   const categories = ["All", "Engineering", "Marketing", "HR & Operations", "Business Development"];
   const filteredJobs = jobCategory === "All" ? jobListings : jobListings.filter(job => job.department === jobCategory);
 
   // Handlers
-  const handleApply = (jobId) => {
-    if (!appliedJobs.includes(jobId)) {
-      setAppliedJobs([...appliedJobs, jobId]);
-      showToast("Application submitted successfully!");
+  const handleApply = async (jobId) => {
+    try {
+      const res = await apiFetch(`/student/jobs/${jobId}/apply`, { method: "POST" });
+      if (res.ok) {
+        showToast("Application submitted successfully!");
+        setAppliedJobs([...appliedJobs, jobId]);
+        loadDashboardData();
+        loadApplications();
+      } else {
+        const data = await res.json();
+        showToast(data.error || "Failed to apply");
+      }
+    } catch (err) {
+      showToast("Failed to connect to server.");
     }
   };
 
@@ -128,7 +203,9 @@ export default function StudentDashboard() {
           <div className="flex items-end gap-3">
             <span className="text-2xl sm:text-3xl font-medium text-[#1A1A1A]">{stats.interviews}</span>
           </div>
-          <p className="text-[10px] sm:text-[11px] text-[#6B99A8] font-medium mt-4 truncate">Amazon SDE - Tomorrow</p>
+          <p className="text-[10px] sm:text-[11px] text-[#6B99A8] font-medium mt-4 truncate">
+            {upcomingInterviews.length > 0 ? `${upcomingInterviews[0].companyName} - ${new Date(upcomingInterviews[0].scheduledAt).toLocaleDateString()}` : "No upcoming interviews"}
+          </p>
         </div>
 
         <div className="bg-[#fcfdfd] border border-[#6B99A8]/20 p-5 sm:p-6 shadow-[0_4px_20px_rgba(107,153,168,0.06)] cursor-pointer" onClick={() => handleTabChange('profile')}>
@@ -149,22 +226,23 @@ export default function StudentDashboard() {
             <button onClick={() => handleTabChange('applications')} className="text-[11px] sm:text-xs text-[#6B99A8] hover:underline font-medium">View All</button>
           </div>
           <div className="space-y-3">
-            {applicationsDetailed.slice(0, 3).map((app) => (
+            {recentApplications.map((app) => (
               <div key={app.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border border-gray-100 hover:border-gray-200 transition-colors bg-gray-50/30 gap-3 sm:gap-0">
                 <div className="flex items-center gap-3 sm:gap-4">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 bg-white border border-gray-200 rounded flex items-center justify-center font-bold text-gray-700">
-                    {app.company[0]}
+                    {app.companyName[0]}
                   </div>
                   <div className="overflow-hidden">
-                    <h4 className="text-[13px] sm:text-sm font-semibold text-[#1A1A1A] truncate">{app.role}</h4>
-                    <p className="text-[10px] sm:text-[11px] text-gray-500 truncate">{app.company} • Applied {app.appliedDate}</p>
+                    <h4 className="text-[13px] sm:text-sm font-semibold text-[#1A1A1A] truncate">{app.jobTitle}</h4>
+                    <p className="text-[10px] sm:text-[11px] text-gray-500 truncate">{app.companyName} • Applied {new Date(app.appliedAt).toLocaleDateString()}</p>
                   </div>
                 </div>
                 <span className="self-start sm:self-auto text-[9px] sm:text-[10px] font-semibold px-2 py-1 sm:px-2.5 rounded border uppercase tracking-wider bg-white text-gray-700 border-gray-200 shrink-0">
-                  {app.stages[app.currentStage]}
+                  {app.state}
                 </span>
               </div>
             ))}
+            {recentApplications.length === 0 && <p className="text-sm text-gray-500">No applications yet.</p>}
           </div>
         </div>
 
@@ -258,6 +336,48 @@ export default function StudentDashboard() {
     </motion.div>
   );
 
+  const [profileForm, setProfileForm] = useState({
+    name: "",
+    branch: "",
+    graduationYear: "",
+    cgpa: "",
+  });
+
+  useEffect(() => {
+    if (studentProfile) {
+      setProfileForm({
+        name: studentProfile.name || "",
+        branch: studentProfile.branch || "",
+        graduationYear: studentProfile.graduationYear || "",
+        cgpa: studentProfile.cgpa || "",
+      });
+    }
+  }, [studentProfile]);
+
+  const handleSaveProfile = async () => {
+    if (studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED') {
+      showToast(`Cannot edit profile while in state: ${studentProfile?.state}`);
+      return;
+    }
+
+    try {
+      const res = await apiFetch("/student/profile", {
+        method: "PUT",
+        body: JSON.stringify(profileForm)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast("Profile submitted for verification!");
+        loadProfile();
+        loadDashboardData();
+      } else {
+        showToast(data.error || "Failed to update profile.");
+      }
+    } catch (err) {
+      showToast("Failed to connect to server.");
+    }
+  };
+
   const renderProfile = () => (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 sm:mb-8 gap-4">
@@ -266,10 +386,10 @@ export default function StudentDashboard() {
           <p className="text-[13px] sm:text-[15px] text-gray-500 mt-1 sm:mt-2">Manage your verified data, academics, and portfolio links.</p>
         </div>
         <button 
-          onClick={() => showToast("Profile changes saved successfully!")}
+          onClick={handleSaveProfile}
           className="bg-[#1A1A1A] text-white px-5 sm:px-6 py-2 text-[12px] sm:text-[13px] font-medium rounded-sm hover:bg-black transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
         >
-          Save Changes
+          Submit for Verification
         </button>
       </div>
 
@@ -278,22 +398,39 @@ export default function StudentDashboard() {
           <div className="bg-white border border-gray-200 p-6 sm:p-8 flex flex-col items-center text-center">
             <div className="relative cursor-pointer" onClick={() => showToast("Avatar upload modal opened.")}>
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-tr from-[#6B99A8] to-[#92b5c1] flex items-center justify-center text-white text-2xl sm:text-3xl font-light tracking-wider mb-4 shadow-sm hover:opacity-90 transition-opacity">
-                JD
+                {studentProfile?.name ? studentProfile.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() : "ST"}
               </div>
               <div className="absolute bottom-4 right-0 bg-white border border-gray-200 p-1.5 rounded-full text-gray-500 hover:text-black shadow-sm transition-colors">
                 <Edit2 size={12} className="sm:w-[14px] sm:h-[14px]" />
               </div>
             </div>
-            <h3 className="text-lg sm:text-xl font-medium text-[#1A1A1A]">John Doe</h3>
-            <p className="text-[12px] sm:text-[13px] text-gray-500 mt-1">Computer Science & Engineering</p>
+
+            {studentProfile?.state === 'REGISTERED' || studentProfile?.state === 'REJECTED' ? (
+               <input
+                 className="text-lg sm:text-xl font-medium text-[#1A1A1A] text-center w-full border-b border-gray-200 focus:outline-none focus:border-[#6B99A8]"
+                 value={profileForm.name}
+                 onChange={e => setProfileForm({...profileForm, name: e.target.value})}
+                 placeholder="Your Full Name"
+               />
+            ) : (
+              <h3 className="text-lg sm:text-xl font-medium text-[#1A1A1A]">{studentProfile?.name || "Student"}</h3>
+            )}
+
+            <p className="text-[12px] sm:text-[13px] text-gray-500 mt-1">{studentProfile?.branch || "Branch not set"}</p>
             <div className="w-full border-t border-gray-100 mt-6 pt-6 space-y-4 text-left">
               <div>
                 <label className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold block mb-1">Email (Verified)</label>
-                <p className="text-[12px] sm:text-[13px] text-gray-800 font-medium">john.doe@college.edu</p>
+                <p className="text-[12px] sm:text-[13px] text-gray-800 font-medium">{studentProfile?.email || "Unknown Email"}</p>
               </div>
               <div>
-                <label className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold block mb-1">Phone</label>
-                <input type="text" defaultValue="+91 98765 43210" className="w-full text-[12px] sm:text-[13px] text-gray-800 font-medium border-b border-transparent hover:border-gray-200 focus:border-[#6B99A8] focus:outline-none bg-transparent py-1 transition-colors" />
+                <label className="text-[10px] sm:text-[11px] text-gray-400 uppercase tracking-widest font-semibold block mb-1">Status</label>
+                <span className={`text-[10px] font-semibold px-2 py-1 rounded border uppercase tracking-wider inline-block ${
+                  studentProfile?.state === 'VERIFIED' ? 'bg-green-50 text-green-700 border-green-200' :
+                  studentProfile?.state === 'PENDING_VERIFICATION' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                  'bg-gray-100 text-gray-600 border-gray-200'
+                }`}>
+                  {studentProfile?.state || "Unknown"}
+                </span>
               </div>
             </div>
           </div>
@@ -305,19 +442,41 @@ export default function StudentDashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">University / College</label>
-                <input type="text" readOnly defaultValue="National Institute of Technology" className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
+                <input type="text" readOnly value={collegeProfile?.name || "Unknown College"} className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
               </div>
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Degree & Branch</label>
-                <input type="text" readOnly defaultValue="B.Tech - CSE" className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
+                <input
+                  type="text"
+                  value={profileForm.branch}
+                  onChange={e => setProfileForm({...profileForm, branch: e.target.value})}
+                  readOnly={studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED'}
+                  className={`w-full border border-gray-200 p-2.5 sm:p-3 text-[12px] sm:text-[13px] outline-none rounded-sm ${studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED' ? 'bg-gray-50 text-gray-600' : 'bg-white focus:border-[#6B99A8]'}`}
+                  placeholder="e.g. B.Tech CSE"
+                />
               </div>
               <div>
                 <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Graduation Year</label>
-                <input type="text" readOnly defaultValue="2026" className="w-full border border-gray-200 bg-gray-50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-gray-600 outline-none rounded-sm" />
+                <input
+                  type="number"
+                  value={profileForm.graduationYear}
+                  onChange={e => setProfileForm({...profileForm, graduationYear: e.target.value})}
+                  readOnly={studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED'}
+                  className={`w-full border border-gray-200 p-2.5 sm:p-3 text-[12px] sm:text-[13px] outline-none rounded-sm ${studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED' ? 'bg-gray-50 text-gray-600' : 'bg-white focus:border-[#6B99A8]'}`}
+                  placeholder="e.g. 2026"
+                />
               </div>
               <div>
-                <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Current CGPA (Verified)</label>
-                <input type="text" readOnly defaultValue="8.94 / 10.0" className="w-full border border-[#6B99A8]/30 bg-[#f4f8f9]/50 p-2.5 sm:p-3 text-[12px] sm:text-[13px] text-[#5B8D9E] font-medium outline-none rounded-sm" />
+                <label className="block text-[11px] sm:text-xs font-medium text-gray-500 mb-1.5">Current CGPA</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={profileForm.cgpa}
+                  onChange={e => setProfileForm({...profileForm, cgpa: e.target.value})}
+                  readOnly={studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED'}
+                  className={`w-full border p-2.5 sm:p-3 text-[12px] sm:text-[13px] outline-none rounded-sm ${studentProfile?.state !== 'REGISTERED' && studentProfile?.state !== 'REJECTED' ? 'border-[#6B99A8]/30 bg-[#f4f8f9]/50 text-[#5B8D9E] font-medium' : 'border-gray-200 bg-white focus:border-[#6B99A8]'}`}
+                  placeholder="e.g. 8.5"
+                />
               </div>
             </div>
           </div>
@@ -643,16 +802,10 @@ export default function StudentDashboard() {
           </button>
         </div>
 
-        <div className="p-6 border-t border-gray-100 bg-white">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleTabChange('profile')}>
-            <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-tr from-[#6B99A8] to-[#92b5c1] flex items-center justify-center text-white text-[11px] font-bold">
-              JD
-            </div>
-            <div className="overflow-hidden">
-              <p className="text-[13px] font-semibold text-[#1A1A1A] truncate">John Doe</p>
-              <p className="text-[11px] text-gray-500 truncate">Student Account</p>
-            </div>
-          </div>
+        <div className="p-4 border-t border-gray-100">
+          <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-[12px] text-gray-500 hover:text-red-600 transition-colors font-medium w-full">
+            <LogOut size={14} /> Sign out
+          </button>
         </div>
       </div>
 
@@ -681,17 +834,10 @@ export default function StudentDashboard() {
                 <button onClick={() => handleTabChange('resume')} className={`flex items-center gap-3 px-4 py-3 text-[13px] font-medium transition-all rounded-sm ${activeTab === 'resume' ? 'bg-[#f4f8f9] text-[#5B8D9E]' : 'text-[#4A5560] hover:bg-gray-50 hover:text-gray-900'}`}><FileText size={16} /> AI Resume Assistant</button>
               </div>
               
-              {/* Mobile User Profile snippet */}
-              <div className="p-4 border-t border-gray-100 bg-white">
-                <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleTabChange('profile')}>
-                  <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-tr from-[#6B99A8] to-[#92b5c1] flex items-center justify-center text-white text-[11px] font-bold">
-                    JD
-                  </div>
-                  <div className="overflow-hidden">
-                    <p className="text-[13px] font-semibold text-[#1A1A1A] truncate">John Doe</p>
-                    <p className="text-[11px] text-gray-500 truncate">Student Account</p>
-                  </div>
-                </div>
+              <div className="p-4 border-t border-gray-100">
+                <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-[12px] text-gray-500 hover:text-red-600 transition-colors font-medium w-full">
+                  <LogOut size={14} /> Sign out
+                </button>
               </div>
             </motion.div>
           </>

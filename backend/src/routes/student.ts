@@ -289,8 +289,21 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
 router.get('/profile', authenticate, requireRole('STUDENT'), async (req: Request, res: Response): Promise<void> => {
     try {
         const [student] = await db
-            .select()
+            .select({
+                id: schema.students.id,
+                collegeId: schema.students.collegeId,
+                cgpa: schema.students.cgpa,
+                branch: schema.students.branch,
+                graduationYear: schema.students.graduationYear,
+                state: schema.students.state,
+                verifiedBy: schema.students.verifiedBy,
+                verifiedAt: schema.students.verifiedAt,
+                createdAt: schema.students.createdAt,
+                name: schema.users.name,
+                email: schema.users.email,
+            })
             .from(schema.students)
+            .innerJoin(schema.users, eq(schema.students.id, schema.users.id))
             .where(eq(schema.students.id, req.user!.id))
             .limit(1);
 
@@ -317,6 +330,8 @@ router.get('/profile', authenticate, requireRole('STUDENT'), async (req: Request
                 verifiedBy: student.verifiedBy,
                 verifiedAt: student.verifiedAt,
                 createdAt: student.createdAt,
+                name: student.name,
+                email: student.email,
             },
             college: college || null,
         });
@@ -328,15 +343,15 @@ router.get('/profile', authenticate, requireRole('STUDENT'), async (req: Request
 
 /**
  * PUT /student/profile
- * Body: { cgpa, branch, graduationYear }
+ * Body: { name, cgpa, branch, graduationYear }
  * Updates academic details and sets state to PENDING_VERIFICATION.
  */
 router.put('/profile', authenticate, requireRole('STUDENT'), async (req: Request, res: Response): Promise<void> => {
     try {
-        const { cgpa, branch, graduationYear } = req.body;
+        const { name, cgpa, branch, graduationYear } = req.body;
 
-        if (!cgpa || !branch || !graduationYear) {
-            res.status(400).json({ error: 'cgpa, branch, and graduationYear are required' });
+        if (!name || !cgpa || !branch || !graduationYear) {
+            res.status(400).json({ error: 'name, cgpa, branch, and graduationYear are required' });
             return;
         }
 
@@ -369,6 +384,12 @@ router.put('/profile', authenticate, requireRole('STUDENT'), async (req: Request
             })
             .where(eq(schema.students.id, req.user!.id))
             .returning();
+
+        // Update user name
+        await db
+            .update(schema.users)
+            .set({ name })
+            .where(eq(schema.users.id, req.user!.id));
 
         res.json({
             message: 'Profile updated. Awaiting verification.',
@@ -426,13 +447,56 @@ router.get('/dashboard', authenticate, requireRole('STUDENT'), async (req: Reque
 
         const interviewCount = intRows.length;
 
+        const applicationsDetailed = await db
+            .select({
+                id: schema.applications.id,
+                state: schema.applications.state,
+                appliedAt: schema.applications.appliedAt,
+                jobTitle: schema.jobs.title,
+                jobLocation: schema.jobs.location,
+                companyName: schema.companies.name,
+            })
+            .from(schema.applications)
+            .innerJoin(schema.jobs, eq(schema.applications.jobId, schema.jobs.id))
+            .innerJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
+            .innerJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
+            .where(eq(schema.applications.studentId, studentId))
+            .orderBy(desc(schema.applications.appliedAt))
+            .limit(3);
+
+        const upcomingInterviews = await db
+            .select({
+                id: schema.interviews.id,
+                applicationId: schema.interviews.applicationId,
+                scheduledAt: schema.interviews.scheduledAt,
+                mode: schema.interviews.mode,
+                meetingLink: schema.interviews.meetingLink,
+                companyName: schema.companies.name,
+                jobTitle: schema.jobs.title,
+            })
+            .from(schema.interviews)
+            .innerJoin(schema.applications, eq(schema.interviews.applicationId, schema.applications.id))
+            .innerJoin(schema.jobs, eq(schema.applications.jobId, schema.jobs.id))
+            .innerJoin(schema.recruiters, eq(schema.jobs.recruiterId, schema.recruiters.id))
+            .innerJoin(schema.companies, eq(schema.recruiters.companyId, schema.companies.id))
+            .where(
+                and(
+                    eq(schema.applications.studentId, studentId),
+                    gt(schema.interviews.scheduledAt, new Date())
+                )
+            )
+            .orderBy(schema.interviews.scheduledAt)
+            .limit(3);
+
         res.json({
             stats: {
                 atsScore: 82, // Mocked for now
                 applications: applicationCount,
                 interviews: interviewCount,
                 profileCompleteness,
-            }
+            },
+            recentApplications: applicationsDetailed,
+            upcomingInterviews,
         });
     } catch (err) {
         console.error('Dashboard error:', err);

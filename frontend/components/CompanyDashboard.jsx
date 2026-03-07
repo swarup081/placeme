@@ -87,45 +87,179 @@ export default function CompanyDashboard() {
     setIsMobileMenuOpen(false);
   };
 
-  const [applicants, setApplicants] = useState([
-    { id: 1, name: "Swarup Kumar", college: "National Institute of Technology", branch: "CSE", atsScore: 92, status: "Applied", date: "2 hrs ago", email: "swarup@nit.edu", phone: "+91 98765 43210" },
-    { id: 2, name: "Neha Gupta", college: "IIT Bombay", branch: "ECE", atsScore: 88, status: "Shortlisted", date: "1 day ago", email: "neha@iitb.ac.in", phone: "+91 91234 56789" },
-    { id: 3, name: "Rohan Das", college: "Delhi Technological University", branch: "IT", atsScore: 76, status: "Applied", date: "2 days ago", email: "rohan@dtu.ac.in", phone: "+91 99887 77665" },
-    { id: 4, name: "Aisha Singh", college: "National Institute of Technology", branch: "CSE", atsScore: 95, status: "Interview", date: "3 days ago", email: "aisha@nit.edu", phone: "+91 98765 11223", interviewDate: "2026-11-05", interviewTime: "10:00 AM" },
-  ]);
+  const [applicants, setApplicants] = useState([]);
+  const [stats, setStats] = useState({ activeJobs: 0, totalApplicants: 0, shortlisted: 0, interviewsScheduled: 0 });
+  const [upcomingInterviews, setUpcomingInterviews] = useState([]);
+  const [colleges, setColleges] = useState([]);
+  const [selectedBranches, setSelectedBranches] = useState([]);
 
-  const stats = { 
-    activeJobs: 3, 
-    totalApplicants: applicants.length + 448, 
-    shortlisted: applicants.filter(a => a.status === "Shortlisted" || a.status === "Interview").length + 42, 
-    interviewsScheduled: applicants.filter(a => a.status === "Interview").length + 11 
+  const branchOptions = [
+    "Computer Science",
+    "Information Technology",
+    "Electronics & Comm.",
+    "Mechanical Engineering",
+    "Civil Engineering",
+    "Electrical Engineering"
+  ];
+
+  const handleBranchToggle = (branch) => {
+    setSelectedBranches(prev =>
+      prev.includes(branch)
+        ? prev.filter(b => b !== branch)
+        : [...prev, branch]
+    );
   };
 
-  const upcomingInterviews = applicants.filter(a => a.status === "Interview");
+  const loadDashboardData = async () => {
+    try {
+      const res = await apiFetch("/recruiter/dashboard");
+      const data = await res.json();
+      if (res.ok) {
+        setStats(data.stats);
+        setUpcomingInterviews(data.upcomingInterviews || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-  const handlePostJob = (e) => {
+  const loadApplicants = async () => {
+    try {
+      const res = await apiFetch("/recruiter/applicants");
+      const data = await res.json();
+      if (res.ok) {
+        setApplicants(data.applicants.map(app => ({
+          id: app.id,
+          name: app.studentName,
+          college: app.collegeName,
+          branch: app.studentBranch || "N/A",
+          atsScore: 85, // Mocked for now, backend doesn't have ATS score
+          status: app.state,
+          date: new Date(app.appliedAt).toLocaleDateString(),
+          email: app.studentEmail,
+          phone: "N/A", // Backend doesn't have phone
+        })));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadColleges = async () => {
+    try {
+      const res = await apiFetch("/recruiter/colleges");
+      const data = await res.json();
+      if (res.ok) {
+        setColleges(data.colleges || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (!needsSetup && !setupLoading) {
+      loadDashboardData();
+      loadApplicants();
+      loadColleges();
+    }
+  }, [needsSetup, setupLoading]);
+
+  const handlePostJob = async (e) => {
     e.preventDefault();
-    showToast("Job successfully submitted for T&P Approval!");
-    setActiveTab("overview");
+    const formData = new FormData(e.target);
+
+    // Find the college ID from the inputted name
+    const selectedCollegeName = formData.get("collegeNameInput");
+    const matchedCollege = colleges.find(c => c.name === selectedCollegeName);
+
+    if (!matchedCollege) {
+      showToast("Please select a valid college from the list.");
+      return;
+    }
+
+    const jobData = {
+      title: formData.get("title"),
+      description: formData.get("description"),
+      type: formData.get("type"),
+      location: formData.get("location"),
+      ctc: formData.get("ctc"),
+      collegeId: matchedCollege.id,
+      branches: selectedBranches.length > 0 ? selectedBranches : ["All Branches"],
+    };
+
+    try {
+      const res = await apiFetch("/recruiter/jobs", {
+        method: "POST",
+        body: JSON.stringify(jobData),
+      });
+
+      if (res.ok) {
+        showToast("Job successfully submitted for T&P Approval!");
+        setActiveTab("overview");
+        setSelectedBranches([]);
+        loadDashboardData();
+      } else {
+        const data = await res.json();
+        showToast(data.error || "Failed to post job");
+      }
+    } catch (err) {
+      showToast("Failed to connect to server.");
+    }
   };
 
-  const handleShortlist = (id, name) => {
-    setApplicants(applicants.map(app => app.id === id ? { ...app, status: "Shortlisted" } : app));
-    showToast(`${name} has been shortlisted!`);
+  const handleShortlist = async (id, name) => {
+    try {
+      const res = await apiFetch(`/recruiter/applications/${id}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status: "SHORTLISTED" })
+      });
+      if (res.ok) {
+        setApplicants(applicants.map(app => app.id === id ? { ...app, status: "SHORTLISTED" } : app));
+        showToast(`${name} has been shortlisted!`);
+        loadDashboardData();
+      } else {
+        const data = await res.json();
+        showToast(data.error || "Failed to shortlist");
+      }
+    } catch (err) {
+      showToast("Failed to connect to server.");
+    }
   };
 
-  const handleScheduleInterview = (e) => {
+  const handleScheduleInterview = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const date = formData.get("date");
     const time = formData.get("time");
+    const link = formData.get("link");
 
-    setApplicants(applicants.map(app => 
-      app.id === selectedCandidate.id ? { ...app, status: "Interview", interviewDate: date, interviewTime: time } : app
-    ));
-    
-    showToast(`Interview scheduled with ${selectedCandidate.name} for ${date} at ${time}`);
-    setSelectedCandidate({ ...selectedCandidate, status: "Interview", interviewDate: date, interviewTime: time });
+    try {
+      const res = await apiFetch(`/recruiter/applications/${selectedCandidate.id}/status`, {
+        method: "POST",
+        body: JSON.stringify({
+          status: "INTERVIEW_SCHEDULED",
+          interviewDate: date,
+          interviewTime: time,
+          meetingLink: link
+        })
+      });
+
+      if (res.ok) {
+        setApplicants(applicants.map(app =>
+          app.id === selectedCandidate.id ? { ...app, status: "INTERVIEW_SCHEDULED", interviewDate: date, interviewTime: time } : app
+        ));
+
+        showToast(`Interview scheduled with ${selectedCandidate.name} for ${date} at ${time}`);
+        setSelectedCandidate({ ...selectedCandidate, status: "INTERVIEW_SCHEDULED", interviewDate: date, interviewTime: time });
+        loadDashboardData();
+      } else {
+        const data = await res.json();
+        showToast(data.error || "Failed to schedule interview");
+      }
+    } catch (err) {
+      showToast("Failed to connect to server.");
+    }
   };
 
   const renderOverview = () => (
@@ -260,14 +394,46 @@ export default function CompanyDashboard() {
 
       <form onSubmit={handlePostJob} className="bg-white border border-gray-200 p-5 sm:p-8 space-y-5 sm:space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
-          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Job Title</label><input required type="text" placeholder="e.g. Software Engineer Intern" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
-          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Employment Type</label><select className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white"><option>Full-Time</option><option>Internship</option></select></div>
-          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Location</label><input required type="text" placeholder="e.g. Remote, Bangalore" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
-          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">CTC / Stipend</label><input required type="text" placeholder="e.g. 24 LPA or 50k/month" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
+          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Job Title</label><input name="title" required type="text" placeholder="e.g. Software Engineer Intern" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
+          <div>
+            <label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Target College</label>
+            <input
+              name="collegeNameInput"
+              list="colleges-list"
+              required
+              placeholder="Search or select a college..."
+              className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white"
+            />
+            <datalist id="colleges-list">
+              {colleges.map(c => (
+                <option key={c.id} value={c.name} data-id={c.id} />
+              ))}
+            </datalist>
+          </div>
+          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Employment Type</label><select name="type" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm bg-white"><option>Full-Time</option><option>Internship</option></select></div>
+          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">Location</label><input name="location" required type="text" placeholder="e.g. Remote, Bangalore" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
+          <div><label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase">CTC / Stipend</label><input name="ctc" required type="text" placeholder="e.g. 24 LPA or 50k/month" className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm" /></div>
+        </div>
+        <div>
+          <label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase tracking-wide">Eligible Branches</label>
+          <div className="flex flex-wrap gap-2">
+            {branchOptions.map(branch => (
+              <label key={branch} className={`cursor-pointer px-3 py-1.5 text-[12px] border rounded-sm transition-colors ${selectedBranches.includes(branch) ? 'bg-[#eef4f6] border-[#6B99A8] text-[#2C6E8F] font-medium' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}>
+                <input
+                  type="checkbox"
+                  className="hidden"
+                  checked={selectedBranches.includes(branch)}
+                  onChange={() => handleBranchToggle(branch)}
+                />
+                {branch}
+              </label>
+            ))}
+          </div>
+          <p className="text-[10px] text-gray-400 mt-1">Leave all unchecked to target all branches.</p>
         </div>
         <div>
           <label className="block text-[11px] sm:text-[12px] font-medium text-gray-600 mb-1.5 uppercase tracking-wide">Job Description</label>
-          <textarea required rows={5} placeholder="Describe the responsibilities and requirements..." className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm resize-none"></textarea>
+          <textarea name="description" required rows={5} placeholder="Describe the responsibilities and requirements..." className="w-full border border-gray-200 p-2.5 sm:p-3 text-[13px] sm:text-sm focus:outline-none focus:border-[#6B99A8] rounded-sm resize-none"></textarea>
         </div>
         <div className="pt-2 sm:pt-4 flex justify-end">
           <button type="submit" className="w-full sm:w-auto bg-[#1A1A1A] text-white px-6 sm:px-8 py-2.5 sm:py-3 text-[12px] sm:text-[13px] font-medium rounded-sm hover:bg-black transition-colors">Submit for Campus Approval</button>
