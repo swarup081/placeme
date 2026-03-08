@@ -29,6 +29,7 @@ export default function StudentDashboard() {
   const [resumeAnalyzing, setResumeAnalyzing] = useState(false);
   const [resumeResult, setResumeResult] = useState(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedResumeFile, setSelectedResumeFile] = useState(null);
 
   // Profile States
   const [profileLoading, setProfileLoading] = useState(true);
@@ -228,35 +229,53 @@ export default function StudentDashboard() {
     showToast("Skill removed.");
   };
 
-  const handleFileChange = async (e) => {
+  const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setUploadedFile(file.name);
+      setSelectedResumeFile(file);
+      showToast("Resume selected! Click 'Analyze Resume' to continue.");
+    }
+  };
 
-      setResumeAnalyzing(true);
-      setResumeResult(null);
-      showToast("Uploading and analyzing resume...");
+  const handleAnalyzeResume = async () => {
+    if (!selectedResumeFile) {
+      showToast("Please select a resume file first.");
+      return;
+    }
 
-      const formData = new FormData();
-      formData.append('resume', file);
+    setResumeAnalyzing(true);
+    setResumeResult(null);
+    showToast("Uploading and analyzing resume...");
 
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/analyze/resume`, {
-          method: 'POST',
-          body: formData,
-        });
+    const formData = new FormData();
+    formData.append('resume', selectedResumeFile);
 
-        if (!response.ok) throw new Error('Failed to analyze resume');
-
-        const data = await response.json();
-        setResumeResult(data);
-        showToast("Resume analyzed successfully!");
-      } catch (err) {
-        showToast("Error analyzing resume. Please try again.");
-        console.error(err);
-      } finally {
-        setResumeAnalyzing(false);
+    try {
+      // We cannot use the default apiFetch here because it forces Content-Type: application/json
+      // FormData requires the browser to set the multipart boundary.
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const headers = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
       }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/analyze/resume`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error('Failed to analyze resume');
+
+      const data = await response.json();
+      setResumeResult(data);
+      showToast("Resume analyzed successfully!");
+    } catch (err) {
+      showToast("Error analyzing resume. Please try again.");
+      console.error(err);
+    } finally {
+      setResumeAnalyzing(false);
 
       // Clear the input value so the same file can be uploaded again if needed
       if (fileInputRef.current) {
@@ -738,13 +757,24 @@ export default function StudentDashboard() {
             </div>
             <h3 className="text-sm sm:text-base font-medium text-gray-800 mb-1">Upload latest Resume</h3>
             <p className="text-[11px] sm:text-xs text-gray-500 mb-6 sm:mb-8">PDF only, max 5MB</p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={resumeAnalyzing}
-              className="bg-white border border-gray-300 text-gray-700 px-5 sm:px-6 py-2 sm:py-2.5 text-[13px] sm:text-sm font-medium hover:border-[#6B99A8] hover:text-[#6B99A8] transition-colors rounded-sm disabled:opacity-50 flex items-center justify-center min-w-[150px]"
-            >
-              {resumeAnalyzing ? <Loader2 size={16} className="animate-spin" /> : 'Select PDF File'}
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={resumeAnalyzing}
+                className="bg-white border border-gray-300 text-gray-700 px-5 sm:px-6 py-2 sm:py-2.5 text-[13px] sm:text-sm font-medium hover:border-[#6B99A8] hover:text-[#6B99A8] transition-colors rounded-sm disabled:opacity-50 flex items-center justify-center min-w-[150px]"
+              >
+                Select PDF File
+              </button>
+              {selectedResumeFile && (
+                <button
+                  onClick={handleAnalyzeResume}
+                  disabled={resumeAnalyzing}
+                  className="bg-[#1A1A1A] text-white px-5 sm:px-6 py-2 sm:py-2.5 text-[13px] sm:text-sm font-medium hover:bg-black transition-colors rounded-sm disabled:opacity-50 flex items-center justify-center min-w-[150px]"
+                >
+                  {resumeAnalyzing ? <Loader2 size={16} className="animate-spin" /> : 'Analyze Resume'}
+                </button>
+              )}
+            </div>
             {resumeAnalyzing && <p className="text-[11px] text-[#6B99A8] mt-2 animate-pulse">Analyzing... This may take up to 10s.</p>}
             <p className="text-[10px] sm:text-[11px] text-[#5B8D9E] font-medium mt-6 sm:mt-8 text-center px-4">
               {uploadedFile ? `Current File: ${uploadedFile}` : "No file selected."}
