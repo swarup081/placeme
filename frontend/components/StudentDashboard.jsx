@@ -25,6 +25,12 @@ export default function StudentDashboard() {
 
   const fileInputRef = useRef(null);
 
+  // AI Resume States
+  const [resumeAnalyzing, setResumeAnalyzing] = useState(false);
+  const [resumeResult, setResumeResult] = useState(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedResumeFile, setSelectedResumeFile] = useState(null);
+
   // Profile States
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileSaving, setProfileSaving] = useState(false);
@@ -225,8 +231,56 @@ export default function StudentDashboard() {
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setUploadedFile(e.target.files[0].name);
-      showToast("Resume uploaded successfully!");
+      const file = e.target.files[0];
+      setUploadedFile(file.name);
+      setSelectedResumeFile(file);
+      showToast("Resume selected! Click 'Analyze Resume' to continue.");
+    }
+  };
+
+  const handleAnalyzeResume = async () => {
+    if (!selectedResumeFile) {
+      showToast("Please select a resume file first.");
+      return;
+    }
+
+    setResumeAnalyzing(true);
+    setResumeResult(null);
+    showToast("Uploading and analyzing resume...");
+
+    const formData = new FormData();
+    formData.append('resume', selectedResumeFile);
+
+    try {
+      // We cannot use the default apiFetch here because it forces Content-Type: application/json
+      // FormData requires the browser to set the multipart boundary.
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const headers = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/analyze/resume`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error('Failed to analyze resume');
+
+      const data = await response.json();
+      setResumeResult(data);
+      showToast("Resume analyzed successfully!");
+    } catch (err) {
+      showToast("Error analyzing resume. Please try again.");
+      console.error(err);
+    } finally {
+      setResumeAnalyzing(false);
+
+      // Clear the input value so the same file can be uploaded again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -677,74 +731,215 @@ export default function StudentDashboard() {
     </motion.div>
   );
 
-  const renderResume = () => (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-      <div className="mb-6 sm:mb-8">
-        <h2 className="text-2xl sm:text-3xl font-medium text-[#1A1A1A] tracking-tight">AI Resume <span className="font-serif italic text-[#6B99A8]">Assistant</span></h2>
-        <p className="text-[13px] sm:text-[15px] text-gray-500 mt-1 sm:mt-2">Upload your resume to get instant ATS feedback and improvement suggestions.</p>
-      </div>
+  const renderResume = () => {
+    const atsScore = resumeResult?.analytics?.ats_score ? Number(resumeResult.analytics.ats_score) : 0;
 
-      {/* Hidden File Input */}
-      <input
-        type="file"
-        accept=".pdf,.docx"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        className="hidden"
-      />
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-        <div className="md:col-span-2 bg-white border border-gray-200 p-6 sm:p-10 flex flex-col items-center justify-center min-h-[250px] sm:min-h-[350px]">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 bg-[#f4f8f9] rounded-full flex items-center justify-center text-[#6B99A8] mb-4 sm:mb-5">
-            <UploadCloud size={20} className="sm:w-[24px] sm:h-[24px]" />
-          </div>
-          <h3 className="text-sm sm:text-base font-medium text-gray-800 mb-1">Upload latest Resume</h3>
-          <p className="text-[11px] sm:text-xs text-gray-500 mb-6 sm:mb-8">PDF or DOCX, max 5MB</p>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="bg-white border border-gray-300 text-gray-700 px-5 sm:px-6 py-2 sm:py-2.5 text-[13px] sm:text-sm font-medium hover:border-[#6B99A8] hover:text-[#6B99A8] transition-colors rounded-sm"
-          >
-            Select File
-          </button>
-          <p className="text-[10px] sm:text-[11px] text-[#5B8D9E] font-medium mt-6 sm:mt-8 text-center px-4">
-            {uploadedFile ? `Current File: ${uploadedFile}` : "Last uploaded: Swarup_Resume_v4.pdf (2 days ago)"}
-          </p>
+    return (
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+        <div className="mb-6 sm:mb-8">
+          <h2 className="text-2xl sm:text-3xl font-medium text-[#1A1A1A] tracking-tight">AI Resume <span className="font-serif italic text-[#6B99A8]">Assistant</span></h2>
+          <p className="text-[13px] sm:text-[15px] text-gray-500 mt-1 sm:mt-2">Upload your resume to get instant ATS feedback and improvement suggestions.</p>
         </div>
 
-        <div className="bg-white border border-gray-200 p-6 sm:p-8 flex flex-col">
-          <h3 className="text-[13px] sm:text-sm font-medium text-[#1A1A1A] mb-6 sm:mb-8 text-center sm:text-left">Current ATS Score</h3>
+        {/* Hidden File Input */}
+        <input
+          type="file"
+          accept=".pdf"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+        />
 
-          <div className="relative w-28 h-28 sm:w-32 sm:h-32 mx-auto mb-6 sm:mb-8 flex items-center justify-center">
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" stroke="#f3f4f6" strokeWidth="6" fill="none" />
-              <circle cx="50" cy="50" r="40" stroke="#6B99A8" strokeWidth="6" fill="none" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * stats.atsScore) / 100} className="transition-all duration-1000 ease-out" />
-            </svg>
-            <div className="absolute flex flex-col items-center justify-center">
-              <span className="text-2xl sm:text-3xl font-medium text-[#1A1A1A]">{stats.atsScore}</span>
-              <span className="text-[9px] sm:text-[10px] text-gray-400 uppercase tracking-widest mt-0.5 sm:mt-1">/ 100</span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+          <div className="md:col-span-2 bg-white border border-gray-200 p-6 sm:p-10 flex flex-col items-center justify-center min-h-[250px] sm:min-h-[350px]">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 bg-[#f4f8f9] rounded-full flex items-center justify-center text-[#6B99A8] mb-4 sm:mb-5">
+              <UploadCloud size={20} className="sm:w-[24px] sm:h-[24px]" />
             </div>
+            <h3 className="text-sm sm:text-base font-medium text-gray-800 mb-1">Upload latest Resume</h3>
+            <p className="text-[11px] sm:text-xs text-gray-500 mb-6 sm:mb-8">PDF only, max 5MB</p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={resumeAnalyzing}
+                className="bg-white border border-gray-300 text-gray-700 px-5 sm:px-6 py-2 sm:py-2.5 text-[13px] sm:text-sm font-medium hover:border-[#6B99A8] hover:text-[#6B99A8] transition-colors rounded-sm disabled:opacity-50 flex items-center justify-center min-w-[150px]"
+              >
+                Select PDF File
+              </button>
+              {selectedResumeFile && (
+                <button
+                  onClick={handleAnalyzeResume}
+                  disabled={resumeAnalyzing}
+                  className="bg-[#1A1A1A] text-white px-5 sm:px-6 py-2 sm:py-2.5 text-[13px] sm:text-sm font-medium hover:bg-black transition-colors rounded-sm disabled:opacity-50 flex items-center justify-center min-w-[150px]"
+                >
+                  {resumeAnalyzing ? <Loader2 size={16} className="animate-spin" /> : 'Analyze Resume'}
+                </button>
+              )}
+            </div>
+            {resumeAnalyzing && <p className="text-[11px] text-[#6B99A8] mt-2 animate-pulse">Analyzing... This may take up to 10s.</p>}
+            <p className="text-[10px] sm:text-[11px] text-[#5B8D9E] font-medium mt-6 sm:mt-8 text-center px-4">
+              {uploadedFile ? `Current File: ${uploadedFile}` : "No file selected."}
+            </p>
           </div>
 
-          <div className="space-y-3 sm:space-y-4 mt-auto">
-            <div className="flex items-start gap-2.5 text-[12px] sm:text-[13px]">
-              <CheckCircle2 size={14} className="sm:w-[16px] sm:h-[16px] text-green-500 shrink-0 mt-0.5" />
-              <span className="text-gray-600 leading-relaxed">Strong impact metrics used in experience section.</span>
+          <div className="bg-white border border-gray-200 p-6 sm:p-8 flex flex-col">
+            <h3 className="text-[13px] sm:text-sm font-medium text-[#1A1A1A] mb-6 sm:mb-8 text-center sm:text-left">Current ATS Score</h3>
+
+            <div className="relative w-28 h-28 sm:w-32 sm:h-32 mx-auto mb-6 sm:mb-8 flex items-center justify-center">
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="40" stroke="#f3f4f6" strokeWidth="6" fill="none" />
+                <circle cx="50" cy="50" r="40" stroke="#6B99A8" strokeWidth="6" fill="none" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * atsScore) / 100} className="transition-all duration-1000 ease-out" />
+              </svg>
+              <div className="absolute flex flex-col items-center justify-center">
+                {resumeAnalyzing ? (
+                  <Loader2 size={24} className="text-[#6B99A8] animate-spin" />
+                ) : (
+                  <>
+                    <span className="text-2xl sm:text-3xl font-medium text-[#1A1A1A]">{resumeResult ? atsScore : 'N/A'}</span>
+                    {resumeResult && <span className="text-[9px] sm:text-[10px] text-gray-400 uppercase tracking-widest mt-0.5 sm:mt-1">/ 100</span>}
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex items-start gap-2.5 text-[12px] sm:text-[13px]">
-              <AlertCircle size={14} className="sm:w-[16px] sm:h-[16px] text-orange-400 shrink-0 mt-0.5" />
-              <span className="text-gray-600 leading-relaxed">Missing keywords: "System Design", "Agile".</span>
+
+            <div className="space-y-3 sm:space-y-4 mt-auto">
+              {resumeAnalyzing ? (
+                <div className="text-center text-[12px] sm:text-[13px] text-[#6B99A8] pb-4 flex items-center justify-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Analyzing your resume...
+                </div>
+              ) : !resumeResult ? (
+                <div className="text-center text-[12px] sm:text-[13px] text-gray-500 pb-4">
+                  Upload a resume to see your score and feedback.
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2.5 text-[12px] sm:text-[13px]">
+                    <CheckCircle2 size={14} className="sm:w-[16px] sm:h-[16px] text-[#6B99A8] shrink-0 mt-0.5" />
+                    <span className="text-gray-600 leading-relaxed">
+                      {resumeResult.analysis?.strengths?.[0] || 'Resume processed successfully.'}
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2.5 text-[12px] sm:text-[13px]">
+                    <AlertCircle size={14} className="sm:w-[16px] sm:h-[16px] text-orange-400 shrink-0 mt-0.5" />
+                    <span className="text-gray-600 leading-relaxed">
+                      {resumeResult.analysis?.weaknesses?.[0] || 'Review formatting feedback for improvements.'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowSuggestions(!showSuggestions)}
+                    className="w-full mt-4 sm:mt-6 bg-[#1A1A1A] text-white py-2.5 sm:py-3 text-[11px] sm:text-xs font-medium tracking-wide hover:bg-black transition-colors rounded-sm"
+                  >
+                    {showSuggestions ? 'Hide AI Suggestions' : 'Make Better Resume ✨'}
+                  </button>
+                </>
+              )}
             </div>
-            <button
-              onClick={() => showToast("Analyzing resume... AI suggestions will appear shortly.")}
-              className="w-full mt-4 sm:mt-6 bg-[#1A1A1A] text-white py-2.5 sm:py-3 text-[11px] sm:text-xs font-medium tracking-wide hover:bg-black transition-colors rounded-sm"
-            >
-              Generate AI Suggestions
-            </button>
           </div>
         </div>
-      </div>
-    </motion.div>
-  );
+
+        {/* Detailed AI Analysis */}
+        {resumeResult && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Candidate Info */}
+              <div className="bg-white p-6 rounded-sm border border-gray-200">
+                <h3 className="text-lg font-medium text-[#1A1A1A] mb-4">Extracted Profile</h3>
+                <h4 className="text-[15px] font-semibold text-[#1A1A1A]">{resumeResult.candidate?.name || 'N/A'}</h4>
+                <p className="text-[13px] text-gray-500 mb-4">{resumeResult.candidate?.email || 'N/A'} • {resumeResult.candidate?.location || 'N/A'}</p>
+                <p className="text-[13px] text-gray-600 leading-relaxed">{resumeResult.summary}</p>
+              </div>
+
+              {/* Formatting Feedback */}
+              <div className="bg-white p-6 rounded-sm border border-gray-200">
+                <h3 className="text-lg font-medium text-[#1A1A1A] mb-4 flex items-center gap-2">
+                  <FileText size={16} className="text-[#6B99A8]" /> Formatting Feedback
+                </h3>
+                <p className="text-[13px] text-gray-600 leading-relaxed">
+                  {resumeResult.analytics?.formatting_feedback || 'No formatting feedback provided.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Strengths and Weaknesses */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-[#f4f8f9] p-6 rounded-sm border border-[#6B99A8]/20">
+                <h3 className="text-[14px] font-medium text-[#5B8D9E] mb-3 flex items-center gap-2">
+                  <CheckCircle2 size={16} /> Strengths
+                </h3>
+                <ul className="list-disc pl-5 space-y-2 text-[13px] text-gray-700">
+                  {resumeResult.analysis?.strengths?.map((s, i) => <li key={i}>{s}</li>) ?? <li>N/A</li>}
+                </ul>
+              </div>
+              <div className="bg-orange-50 p-6 rounded-sm border border-orange-100">
+                <h3 className="text-[14px] font-medium text-orange-600 mb-3 flex items-center gap-2">
+                  <AlertCircle size={16} /> Areas to Improve
+                </h3>
+                <ul className="list-disc pl-5 space-y-2 text-[13px] text-gray-700">
+                  {resumeResult.analysis?.weaknesses?.map((w, i) => <li key={i}>{w}</li>) ?? <li>N/A</li>}
+                </ul>
+              </div>
+            </div>
+
+            {/* Skills */}
+            <div className="bg-white p-6 rounded-sm border border-gray-200">
+              <h3 className="text-[14px] font-medium text-[#1A1A1A] mb-4">Top Skills Detected</h3>
+              <div className="flex flex-wrap gap-2">
+                {resumeResult.skills?.programming_languages?.map((skill) => (
+                  <span key={skill} className="bg-gray-50 border border-gray-200 px-3 py-1 rounded-sm text-[12px] font-medium text-gray-700">
+                    {skill}
+                  </span>
+                ))}
+                {resumeResult.skills?.frameworks?.map((skill) => (
+                  <span key={skill} className="bg-gray-50 border border-gray-200 px-3 py-1 rounded-sm text-[12px] font-medium text-gray-700">
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Make Better Resume Suggestions Toggle */}
+            <AnimatePresence>
+              {showSuggestions && resumeResult.rewritten_suggestions && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="bg-white p-6 sm:p-8 rounded-sm border-2 border-[#1A1A1A] mt-8 shadow-sm">
+                    <h3 className="text-xl font-bold text-[#1A1A1A] mb-6 flex items-center gap-2">
+                      ✨ Make Better Resume
+                    </h3>
+
+                    <div className="space-y-6">
+                      <div>
+                        <h4 className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-3">Suggested Summary</h4>
+                        <div className="bg-gray-50 border border-gray-200 p-4 rounded-sm">
+                          <p className="text-[14px] text-gray-800 leading-relaxed font-medium">
+                            {resumeResult.rewritten_suggestions.summary}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-3">Impactful Bullet Points</h4>
+                        <div className="bg-gray-50 border border-gray-200 p-4 rounded-sm">
+                          <ul className="list-disc pl-5 space-y-3">
+                            {resumeResult.rewritten_suggestions.bullet_points.map((bp, i) => (
+                              <li key={i} className="text-[14px] text-gray-800 font-medium">{bp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+      </motion.div>
+    );
+  };
 
   // ================= MAIN LAYOUT =================
 

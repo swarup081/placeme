@@ -1,0 +1,7 @@
+
+> backend@1.0.0 dev
+> tsx watch src/index.ts
+
+Server running on http://localhost:3001
+Database connection FAILED on startup:
+   → Check your DATABASE_URL and network connectivity
